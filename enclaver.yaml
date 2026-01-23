@@ -1,0 +1,41 @@
+version: v1
+name: "nova-app"
+target: "nova-app:latest"
+
+sources:
+  app: "nova-app-base:latest"
+
+# Odyn Primary API (full functionality)
+api:
+  listen_port: 18000
+
+# Odyn Auxiliary API (restricted, for sidecars)
+aux_api:
+  listen_port: 18001
+
+# Application ingress - listen_port must match the "App Listening Port" 
+# specified when creating the app on the Nova platform.
+ingress:
+  - listen_port: 8000
+
+# Egress for external API calls
+# NOTE: Nova platform manages this automatically for you.
+egress:
+  allow:
+    - "**"           # All domains
+    - "0.0.0.0/0"    # All IPv4
+    - "::/0"         # All IPv6
+
+# S3 persistent storage
+# NOTE: Nova platform provisions and manages these values during deployment.
+storage:
+  s3:
+    enabled: true
+    bucket: "your-bucket-name"
+    prefix: "apps/your-app-id/"
+    region: "us-east-1"
+
+# Resource defaults
+defaults:
+  cpu_count: 2
+  memory_mb: 4096

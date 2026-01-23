@@ -1,0 +1,25 @@
+{
+    "name": "nova-app-template-frontend",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "dev": "next dev",
+        "build": "next build",
+        "start": "next start",
+        "lint": "next lint"
+    },
+    "dependencies": {
+        "@noble/hashes": "^2.0.1",
+        "@noble/secp256k1": "^3.0.0",
+        "cbor-web": "^9.0.2",
+        "next": "^14.2.0",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "@types/react": "^18.2.0",
+        "@types/react-dom": "^18.2.0",
+        "typescript": "^5.0.0"
+    }
+}
