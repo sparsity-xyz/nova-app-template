@@ -37,6 +37,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -55,10 +56,56 @@ logger = logging.getLogger("nova-app")
 # =============================================================================
 # FastAPI Application Instance
 # =============================================================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Called when the application starts and stops.
+    """
+    # Startup
+    logger.info("Starting Nova App...")
+    
+    # 1. Initialize user modules with shared references
+    from chain import wait_for_helios
+    try:
+        wait_for_helios()
+    except Exception as e:
+        logger.warning(f"Helios wait failed: {e}")
+
+    tasks.init(app_state, odyn)
+    routes.init(app_state, odyn)
+    
+    # 2. Register user routes (prefix: /api) and public routes
+    app.include_router(routes.public_router)
+    app.include_router(routes.router)
+    
+    # 3. Load persisted state from S3
+    try:
+        data_bytes = odyn.s3_get("app_state.json")
+        if data_bytes:
+            app_state["data"] = json.loads(data_bytes.decode('utf-8'))
+            logger.info("State loaded from S3")
+        else:
+            logger.info("No previous state found, starting fresh")
+        app_state["initialized"] = True
+    except Exception as e:
+        logger.warning(f"Starting fresh (could not load state): {e}")
+        app_state["initialized"] = True
+
+    # 4. Start background scheduler
+    scheduler.start()
+    logger.info("Nova App started successfully")
+    
+    yield
+    
+    # Shutdown
+    scheduler.shutdown()
+    logger.info("Nova App shutdown complete")
+
 app = FastAPI(
     title="Nova App",
     description="A verifiable TEE application on Nova Platform",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # =============================================================================
@@ -88,7 +135,7 @@ app.add_middleware(
 # =============================================================================
 # Frontend Static Files (optional, for bundled static UI)
 # =============================================================================
-FRONTEND_DIR = Path(__file__).parent / "frontend-dist"
+FRONTEND_DIR = Path(__file__).parent / "frontend"
 
 # Mount frontend static files if the directory exists
 if FRONTEND_DIR.exists():
@@ -165,51 +212,7 @@ scheduler.add_job(tasks.oracle_periodic_update, 'interval', minutes=tasks.ORACLE
 # =============================================================================
 # Application Lifecycle
 # =============================================================================
-@app.on_event("startup")
-def startup_event():
-    """
-    Called when the application starts.
-    1. Initializes user modules with shared state
-    2. Registers user-defined routes
-    3. Loads encrypted state from S3
-    4. Starts the background scheduler
-    """
-    # 1. Initialize user modules with shared references
-    from chain import wait_for_helios
-    try:
-        wait_for_helios()
-    except Exception as e:
-        logger.warning(f"Helios wait failed: {e}")
-
-    tasks.init(app_state, odyn)
-    routes.init(app_state, odyn)
-    
-    # 2. Register user routes (prefix: /api) and public routes
-    app.include_router(routes.public_router)
-    app.include_router(routes.router)
-    
-    # 3. Load persisted state from S3
-    try:
-        data_bytes = odyn.s3_get("app_state.json")
-        if data_bytes:
-            app_state["data"] = json.loads(data_bytes.decode('utf-8'))
-            logger.info("State loaded from S3")
-        else:
-            logger.info("No previous state found, starting fresh")
-        app_state["initialized"] = True
-    except Exception as e:
-        logger.warning(f"Starting fresh (could not load state): {e}")
-        app_state["initialized"] = True
-
-    # 4. Start background scheduler
-    scheduler.start()
-    logger.info("Nova App started successfully")
-
-@app.on_event("shutdown")
-def shutdown_event():
-    """Called when the application shuts down."""
-    scheduler.shutdown()
-    logger.info("Nova App shutdown complete")
+# Removed legacy on_event handlers in favor of lifespan context manager
 
 # =============================================================================
 # Development Entry Point

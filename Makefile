@@ -14,7 +14,7 @@ build-frontend:
 	cp -r frontend/out/* enclave/frontend/
 
 build-docker:
-	docker build -t nova-app:latest .
+	docker build -t nova-app-template:latest .
 
 build-enclave:
 	enclaver build

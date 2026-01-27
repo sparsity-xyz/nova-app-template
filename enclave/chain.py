@@ -25,11 +25,15 @@ class Chain:
             self.endpoint = rpc_url
         else:
             is_enclave = os.getenv("IN_ENCLAVE", "False").lower() == "true"
-            # Prioritize RPC_URL from config if set, otherwise use defaults
-            if RPC_URL and not RPC_URL.startswith("http://localhost") and not RPC_URL.startswith("http://127.0.0.1"):
-                 self.endpoint = RPC_URL
+            if is_enclave:
+                # In enclave: use Helios locally or RPC_URL if it's a real endpoint
+                if RPC_URL and not RPC_URL.startswith("http://localhost") and not RPC_URL.startswith("http://127.0.0.1"):
+                     self.endpoint = RPC_URL
+                else:
+                     self.endpoint = self.DEFAULT_HELIOS_RPC
             else:
-                 self.endpoint = self.DEFAULT_HELIOS_RPC if is_enclave else self.DEFAULT_MOCK_RPC
+                # Outside enclave: always use Mock RPC
+                self.endpoint = self.DEFAULT_MOCK_RPC
             
         self.w3 = Web3(Web3.HTTPProvider(self.endpoint))
 

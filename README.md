@@ -125,7 +125,7 @@ Default endpoints:
 make build-docker
 
 # Run the container locally (mock mode)
-docker run -p 8000:8000 -e IN_ENCLAVE=false nova-app:latest
+docker run -p 8000:8000 -e IN_ENCLAVE=false nova-app-template:latest
 ```
 
 
