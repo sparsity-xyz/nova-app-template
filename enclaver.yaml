@@ -3,7 +3,7 @@ name: "nova-app"
 target: "nova-app:latest"
 
 sources:
-  app: "nova-app-base:latest"
+  app: "."
 
 # Odyn Primary API (full functionality)
 api:
@@ -17,6 +17,7 @@ aux_api:
 # specified when creating the app on the Nova platform.
 ingress:
   - listen_port: 8000
+  - listen_port: 18001
 
 # Egress for external API calls
 # NOTE: Nova platform manages this automatically for you.
@@ -38,4 +39,4 @@ storage:
 # Resource defaults
 defaults:
   cpu_count: 2
-  memory_mb: 4096
+  memory_mb: 2048

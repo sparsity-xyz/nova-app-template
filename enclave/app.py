@@ -175,6 +175,12 @@ def startup_event():
     4. Starts the background scheduler
     """
     # 1. Initialize user modules with shared references
+    from chain import wait_for_helios
+    try:
+        wait_for_helios()
+    except Exception as e:
+        logger.warning(f"Helios wait failed: {e}")
+
     tasks.init(app_state, odyn)
     routes.init(app_state, odyn)
     

@@ -14,19 +14,19 @@ This template targets the Nova platform for verifiable TEE applications and is a
 ## Structure
 
 ```
-|-- enclave/               # FastAPI (TEE)
+|-- enclave/               # FastAPI (TEE Backend)
 |   |-- app.py             # App entry
 |   |-- routes.py          # API routes (business logic)
 |   |-- tasks.py           # Scheduler tasks & event polling
 |   |-- odyn.py            # Odyn SDK (latest internal API)
-|   |-- chain.py           # On-chain helpers & tx signing
-|   |-- requirements.txt
+|   |-- chain.py           # On-chain helpers & Web3 integration
+|   |-- requirements.txt   # Backend dependencies
+|   |-- frontend/          # Built frontend assets (for bundling)
 |-- contracts/             # Solidity contracts
-|   |-- src/NovaAppBase.sol
-|   |-- src/ETHPriceOracleApp.sol
-|-- frontend/              # Next.js frontend
-|-- enclaver.yaml          # Enclave config
-|-- Makefile
+|-- frontend/              # Next.js frontend source
+|-- enclaver.yaml          # Enclaver build configuration
+|-- Dockerfile             # Multi-stage TEE build (Next.js + Python)
+|-- Makefile               # Dev & Build commands
 ```
 
 ---
@@ -91,17 +91,12 @@ Located in `/frontend`, includes:
 - Oracle demo
 - Event polling status
 
-### 6) Odyn Mockup Service
-`odyn.py` switches endpoints based on `IN_ENCLAVE`:
-- `IN_ENCLAVE=true` → http://localhost:18000
-- `IN_ENCLAVE=false` → http://odyn.sparsity.cloud:18000
+### 6) Trustless RPC (Helios)
+`chain.py` uses **Web3.py** and supports the **Helios light client** for verifiable RPC. 
+- In development (`IN_ENCLAVE=false`), it connects to a mock RPC.
+- In production (`IN_ENCLAVE=true`), it connects to a local Helios instance (port 8545).
 
-Mockup supports the latest Internal API:
-- /v1/eth/address
-- /v1/eth/sign / sign-tx
-- /v1/attestation
-- /v1/encryption/*
-- /v1/s3/*
+The `wait_for_helios()` helper ensures the light client is synced before the app starts.
 
 ---
 
@@ -109,20 +104,30 @@ Mockup supports the latest Internal API:
 
 ### Local Development (Mock)
 ```bash
-cd nova-app-template
-make install-enclave
-make install-frontend
+# Start frontend dev server (port 3000)
+make dev-frontend
+
+# Build & Copy frontend to enclave
 make build-frontend
 
-# Run FastAPI (mock mode)
-cd enclave
-python app.py
+# Start backend locally (port 8000, mock mode)
+make dev-backend
 ```
 
 Default endpoints:
 - API: http://localhost:8000
 - Attestation: http://localhost:8000/.well-known/attestation
-- UI: http://localhost:8000/frontend
+- UI: http://localhost:8000/frontend/ (trailing slash required)
+
+### Build & Run (Docker)
+```bash
+# Build a standard Docker image
+make build-docker
+
+# Run the container locally (mock mode)
+docker run -p 8000:8000 -e IN_ENCLAVE=false nova-app:latest
+```
+
 
 ### Deploy to Nova
 1. Create an App in the Nova Console
