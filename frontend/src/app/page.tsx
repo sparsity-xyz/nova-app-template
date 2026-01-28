@@ -32,7 +32,11 @@ export default function Home() {
     const [loading, setLoading] = useState(false);
     const [activeTab, setActiveTab] = useState('identity');
     const [responsesByTab, setResponsesByTab] = useState<Record<string, ApiResponse | null>>({});
-    const activeResponse = responsesByTab[activeTab] || null;
+    const [lastResponseKey, setLastResponseKey] = useState<string | null>(null);
+    // Show last API response - if lastResponseKey is set, show that; otherwise fall back to activeTab
+    const activeResponse = lastResponseKey
+        ? (responsesByTab[lastResponseKey] || null)
+        : (responsesByTab[activeTab] || null);
 
     const [ratlsTrace, setRATlsTrace] = useState<RATLSConnectTrace | null>(null);
     const [showRATlsTrace, setShowRATlsTrace] = useState(false);
@@ -97,6 +101,7 @@ export default function Home() {
 
     const handleTabChange = (tabId: string) => {
         setActiveTab(tabId);
+        setLastResponseKey(null); // Reset to show tab's own response
     };
 
     // Auto-load event monitor status when switching to events tab (poll every 5s)
@@ -131,6 +136,7 @@ export default function Home() {
     const callApi = async (path: string, method: 'GET' | 'POST' = 'GET', body?: any, encrypted = false, tabOverride?: string) => {
         const tabAtCall = tabOverride || activeTab;
         setLoading(true);
+        setLastResponseKey(tabAtCall); // Track which key will have the response
         setResponsesByTab(prev => ({ ...prev, [tabAtCall]: null }));
         try {
             let res;
@@ -451,6 +457,33 @@ export default function Home() {
                                         </div>
                                     </div>
                                 )}
+
+                                {/* NSM Random Result */}
+                                {responsesByTab['random'] && (
+                                    <div className="mt-6 bg-gradient-to-br from-emerald-50 to-white border border-emerald-200 rounded-xl p-4">
+                                        <p className="text-xs font-semibold text-emerald-700 uppercase tracking-widest mb-2">
+                                            Hardware Entropy (NSM)
+                                        </p>
+                                        {responsesByTab['random'].success ? (
+                                            <div className="space-y-2">
+                                                <div>
+                                                    <span className="text-xs text-slate-500">Random Hex:</span>
+                                                    <code className="block text-xs font-mono bg-white px-2 py-1 rounded mt-1 break-all border border-emerald-100">
+                                                        {responsesByTab['random'].data?.random_hex}
+                                                    </code>
+                                                </div>
+                                                <div>
+                                                    <span className="text-xs text-slate-500">Random Int:</span>
+                                                    <code className="block text-xs font-mono bg-white px-2 py-1 rounded mt-1 break-all border border-emerald-100">
+                                                        {responsesByTab['random'].data?.random_int}
+                                                    </code>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="text-red-600 text-sm">{responsesByTab['random'].error}</p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -548,33 +581,6 @@ export default function Home() {
                                         </div>
                                     )}
                                 </div>
-
-                                {/* NSM Random Result */}
-                                {responsesByTab['random'] && (
-                                    <div className="mt-6 bg-gradient-to-br from-emerald-50 to-white border border-emerald-200 rounded-xl p-4">
-                                        <p className="text-xs font-semibold text-emerald-700 uppercase tracking-widest mb-2">
-                                            Hardware Entropy (NSM)
-                                        </p>
-                                        {responsesByTab['random'].success ? (
-                                            <div className="space-y-2">
-                                                <div>
-                                                    <span className="text-xs text-slate-500">Random Hex:</span>
-                                                    <code className="block text-xs font-mono bg-white px-2 py-1 rounded mt-1 break-all border border-emerald-100">
-                                                        {responsesByTab['random'].data?.random_hex}
-                                                    </code>
-                                                </div>
-                                                <div>
-                                                    <span className="text-xs text-slate-500">Random Int:</span>
-                                                    <code className="block text-xs font-mono bg-white px-2 py-1 rounded mt-1 break-all border border-emerald-100">
-                                                        {responsesByTab['random'].data?.random_int}
-                                                    </code>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <p className="text-red-600 text-sm">{responsesByTab['random'].error}</p>
-                                        )}
-                                    </div>
-                                )}
                             </div>
                         )}
 
