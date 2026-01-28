@@ -119,12 +119,7 @@ Note: Per template configuration, on-chain settings are read from [enclave/confi
 | Variable | Default | Description |
 |------|--------|------|
 | `IN_ENCLAVE` | false | Run inside a real enclave |
-| `RPC_URL` | https://sepolia.base.org | Legacy (not read by enclave; use `enclave/config.py`) |
-| `CHAIN_ID` | 84532 | Legacy (not read by enclave; use `enclave/config.py`) |
-| `CONTRACT_ADDRESS` | (empty) | Legacy (not read by enclave; use `enclave/config.py`) |
-| `APP_CONTRACT_ADDRESS` | (empty) | Legacy alias (not read by enclave; use `enclave/config.py`) |
-| `BROADCAST_TX` | false | Legacy (not read by enclave; use `enclave/config.py`) |
-| `ANCHOR_ON_WRITE` | true | Legacy (not read by enclave; use `enclave/config.py`) |
+
 | `CORS_ORIGINS` | * | Allowed CORS origins (comma-separated or *) |
 | `CORS_ALLOW_CREDENTIALS` | true | Allow cross-origin credentials |
 

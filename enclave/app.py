@@ -216,14 +216,14 @@ scheduler.add_job(tasks.oracle_periodic_update, 'interval', minutes=tasks.ORACLE
 # =============================================================================
 # Application Lifecycle
 # =============================================================================
-# Removed legacy on_event handlers in favor of lifespan context manager
+
 
 # =============================================================================
 # Development Entry Point
 # =============================================================================
 if __name__ == "__main__":
     # This port must match the "App Listening Port" value entered when 
-    # creating the app on the Nova platform。
+    # creating the app on the Nova platform.
     # If you specify ingress.listen_port in enclaver.yaml, it can be detected by nova platform automatically.
     uvicorn.run(app, host="0.0.0.0", port=8000)
 

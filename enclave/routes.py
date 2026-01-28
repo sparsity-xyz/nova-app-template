@@ -634,14 +634,7 @@ def update_contract_state(req: ContractWriteRequest):
 # Oracle Demo (Internet to Chain)
 # =============================================================================
 
-@router.get("/oracle/price")
-def get_oracle_price_tx():
-    """
-    Oracle Demo (legacy): Fetch internet data and sign an on-chain update.
 
-    Prefer POST /oracle/update-now for a real on-chain update flow.
-    """
-    return update_oracle_price_now()
 
 
 @router.post("/oracle/update-now")

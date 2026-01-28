@@ -107,7 +107,7 @@ def compute_state_hash(data: dict) -> str:
     return "0x" + keccak(json_bytes).hex()
 
 def _rpc_call(rpc_url: str, method: str, params: list) -> Any:
-    """Legacy helper for direct RPC calls (uses the Chain instance's w3)."""
+    """Helper for direct RPC calls (uses the Chain instance's w3)."""
     # Note: rpc_url is mostly ignored now in favor of the w3 provider
     # but we can use it to create a temporary provider if needed.
     if rpc_url and rpc_url != _chain.endpoint:
