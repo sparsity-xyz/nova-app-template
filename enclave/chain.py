@@ -10,7 +10,7 @@ import requests
 from web3 import Web3
 from eth_hash.auto import keccak
 
-from config import RPC_URLS, RPC_URL, CHAIN_ID
+from config import CHAIN_ID
 
 logger = logging.getLogger("nova-app.chain")
 
@@ -26,13 +26,10 @@ class Chain:
         else:
             is_enclave = os.getenv("IN_ENCLAVE", "False").lower() == "true"
             if is_enclave:
-                # In enclave: use Helios locally or RPC_URL if it's a real endpoint
-                if RPC_URL and not RPC_URL.startswith("http://localhost") and not RPC_URL.startswith("http://127.0.0.1"):
-                     self.endpoint = RPC_URL
-                else:
-                     self.endpoint = self.DEFAULT_HELIOS_RPC
+                # In enclave: always default to the local trustless Helios instance
+                self.endpoint = self.DEFAULT_HELIOS_RPC
             else:
-                # Outside enclave: always use Mock RPC
+                # Outside enclave: always use the remote Mockup RPC
                 self.endpoint = self.DEFAULT_MOCK_RPC
             
         self.w3 = Web3(Web3.HTTPProvider(self.endpoint))
@@ -119,7 +116,6 @@ def sign_update_eth_price(
     odyn: Any,
     contract_address: str,
     chain_id: int,
-    rpc_url: str,
     request_id: int,
     price_usd: int,
     updated_at: int,
@@ -173,7 +169,6 @@ def sign_update_state_hash(
     odyn: Any,
     contract_address: str,
     chain_id: int,
-    rpc_url: str,
     state_hash: str,
     broadcast: bool = False,
 ) -> Dict[str, Any]:
@@ -217,7 +212,7 @@ def sign_update_state_hash(
 
     return result
 
-def get_onchain_state_hash(*, rpc_url: str, contract_address: str) -> Optional[str]:
+def get_onchain_state_hash(*, contract_address: str) -> Optional[str]:
     """Read stateHash() from contract via eth_call."""
     if not contract_address:
         return None

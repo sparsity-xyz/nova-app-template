@@ -33,7 +33,6 @@ from eth_hash.auto import keccak
 
 from chain import compute_state_hash, sign_update_state_hash, sign_update_eth_price, rpc_call_with_failover
 from config import (
-    RPC_URL,
     CONTRACT_ADDRESS,
     CHAIN_ID,
     BROADCAST_TX,
@@ -126,7 +125,6 @@ def update_eth_price_on_chain(*, request_id: int, reason: str) -> Dict[str, Any]
         odyn=odyn,
         contract_address=CONTRACT_ADDRESS,
         chain_id=CHAIN_ID,
-        rpc_url=RPC_URL,
         request_id=request_id,
         price_usd=price_usd,
         updated_at=updated_at,
@@ -168,7 +166,6 @@ def update_state_hash_on_chain(state_hash: str) -> Optional[str]:
             odyn=odyn,
             contract_address=CONTRACT_ADDRESS,
             chain_id=CHAIN_ID,
-            rpc_url=RPC_URL,
             state_hash=state_hash,
             broadcast=BROADCAST_TX,
         )
@@ -313,7 +310,6 @@ def poll_contract_events():
             odyn=odyn,
             contract_address=CONTRACT_ADDRESS,
             chain_id=CHAIN_ID,
-            rpc_url=RPC_URL,
             state_hash=state_hash,
             broadcast=BROADCAST_TX,
         )

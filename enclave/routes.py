@@ -39,8 +39,8 @@ from fastapi import APIRouter, HTTPException, Body, Response
 from pydantic import BaseModel
 
 from chain import compute_state_hash, sign_update_state_hash, get_onchain_state_hash
-from chain import sign_update_eth_price, rpc_call_with_failover
-from config import CONTRACT_ADDRESS, RPC_URL, CHAIN_ID, BROADCAST_TX, ANCHOR_ON_WRITE
+from chain import sign_update_eth_price, rpc_call_with_failover, _chain
+from config import CONTRACT_ADDRESS, CHAIN_ID, BROADCAST_TX, ANCHOR_ON_WRITE
 
 # Type hint for Odyn (actual import would cause circular dependency)
 if TYPE_CHECKING:
@@ -386,7 +386,7 @@ def save_to_storage(req: StorageRequest):
                 # Check TEE wallet balance
                 try:
                     from chain import _rpc_call
-                    balance_hex = _rpc_call(RPC_URL, "eth_getBalance", [tee_address, "latest"])
+                    balance_hex = _rpc_call("", "eth_getBalance", [tee_address, "latest"])
                     balance_wei = int(balance_hex, 16)
                     balance_eth = balance_wei / 1e18
                     anchor_status["tee_balance_eth"] = balance_eth
@@ -410,7 +410,6 @@ def save_to_storage(req: StorageRequest):
                         odyn=odyn,
                         contract_address=CONTRACT_ADDRESS,
                         chain_id=CHAIN_ID,
-                        rpc_url=RPC_URL,
                         state_hash=state_hash,
                         broadcast=BROADCAST_TX,
                     )
@@ -487,7 +486,7 @@ def load_from_storage(key: str):
                     result["verified"] = None
                     result["verification_note"] = "Cannot verify: stored value is not a JSON object"
                 else:
-                    onchain_hash = get_onchain_state_hash(rpc_url=RPC_URL, contract_address=CONTRACT_ADDRESS)
+                    onchain_hash = get_onchain_state_hash(contract_address=CONTRACT_ADDRESS)
                     computed_hash = compute_state_hash(verify_value)
                     result["onchain_hash"] = onchain_hash
                     result["computed_hash"] = computed_hash
@@ -583,7 +582,7 @@ def read_contract():
     # This is a demo showing the pattern
     return {
         "contract_address": CONTRACT_ADDRESS,
-        "rpc_url": RPC_URL,
+        "rpc_url": _chain.endpoint,
         "chain_id": CHAIN_ID,
         "tee_address": odyn.eth_address() if odyn else None,
         "note": "Full contract read requires web3.py integration"
@@ -614,7 +613,6 @@ def update_contract_state(req: ContractWriteRequest):
             odyn=odyn,
             contract_address=CONTRACT_ADDRESS,
             chain_id=CHAIN_ID,
-            rpc_url=RPC_URL,
             state_hash=req.state_hash,
             broadcast=BROADCAST_TX,
         )
@@ -724,7 +722,6 @@ def update_oracle_price_now():
             odyn=odyn,
             contract_address=CONTRACT_ADDRESS,
             chain_id=CHAIN_ID,
-            rpc_url=RPC_URL,
             request_id=0,
             price_usd=price_usd,
             updated_at=updated_at,
@@ -808,8 +805,8 @@ def get_oracle_events(lookback: int = 1000):
             detail={
                 "error": "rpc_failed",
                 "message": f"Failed to get current block number: {e}",
-                "hint": "Check RPC_URL in config.py and network connectivity.",
-                "rpc_url": RPC_URL,
+                "hint": "Check network connectivity and Helios status.",
+                "rpc_url": _chain.endpoint,
             },
         )
 
@@ -1036,7 +1033,6 @@ def handle_pending_requests(lookback: int = 1000):
                 odyn=odyn,
                 contract_address=CONTRACT_ADDRESS,
                 chain_id=CHAIN_ID,
-                rpc_url=RPC_URL,
                 request_id=request_id,
                 price_usd=price_usd,
                 updated_at=updated_at,

@@ -67,9 +67,12 @@ async def lifespan(app: FastAPI):
     # 1. Initialize user modules with shared references
     from chain import wait_for_helios
     try:
-        wait_for_helios()
+        # We try to wait for Helios. If it's not enabled in Nova UI, 
+        # this will eventually timeout or fail, which is correct for 
+        # an app that requires verifiable blockchain access.
+        wait_for_helios(timeout=30) 
     except Exception as e:
-        logger.warning(f"Helios wait failed: {e}")
+        logger.warning(f"Helios sync wait skipped/failed: {e}")
 
     tasks.init(app_state, odyn)
     routes.init(app_state, odyn)

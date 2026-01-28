@@ -1,13 +1,15 @@
-# Nova App Template (Odyn Internal API)
+# Nova App Template
 
-This template targets the Nova platform for verifiable TEE applications and is aligned with the latest Odyn Internal API. It covers:
+This repository provides a template for building and deploying verifiable TEE applications on the Nova platform. Its primary goal is to demonstrate Nova's core features and provide developers with a ready-to-use foundation.
 
-1. S3 read/write with state hash anchoring on-chain
-2. Scheduled external data fetch and on-chain updates
-3. On-chain event polling and response
-4. Public APIs with RA-TLS encrypted communication
-5. Frontend located in /frontend
-6. A lightweight Odyn Mockup client (odyn.py)
+The template covers:
+
+1. **Verifiable TEE Runtime**: Secure execution within AWS Nitro Enclaves with automated attestation and hardware-sealed identity.
+2. **Isolated S3 Storage**: Encrypted key-value storage with on-chain state hash anchoring for verifiable persistence.
+3. **Trustless RPC (Helios)**: Built-in support for the Helios light client, enabling verifiable blockchain interactions.
+4. **Automated Oracle & Event Tasks**: Periodic background tasks for fetching external data and responding to on-chain events.
+5. **End-to-End Encryption**: Public RA-TLS attestation endpoints and ECDH-based encrypted communication channels.
+6. **Modern Developer Stack**: A complete Next.js frontend and a local mockup environment (`odyn.py`) for seamless development.
 
 ---
 
@@ -33,70 +35,41 @@ This template targets the Nova platform for verifiable TEE applications and is a
 
 ## Core Capabilities
 
-### 1) S3 Storage + Hash Anchoring
-After writing to `/api/storage`, the app will:
-- Update in-memory state
-- Compute the full state hash (keccak256)
-- Sign `updateStateHash(bytes32)` and optionally broadcast
+### 1) Verifiable TEE Runtime
+Nova provides a secure environment using **AWS Nitro Enclaves**.
+- **Hardware-Sealed Identity**: The TEE generates its own Ethereum wallet (`odyn.eth_address()`) derived from enclave-local secrets.
+- **Remote Attestation**: Cryptographic proof of the enclave's state and measurements (PCRs), verifiable by anyone.
+- **Related Code**: [enclave/app.py](enclave/app.py), [enclave/odyn.py](enclave/odyn.py)
 
-Related code:
-- [enclave/routes.py](enclave/routes.py)
-- [enclave/chain.py](enclave/chain.py)
-- [contracts/src/NovaAppBase.sol](contracts/src/NovaAppBase.sol)
+### 2) Isolated S3 Storage
+The platform provides persistent storage isolated to your specific app.
+- **S3 read/write**: Use `odyn.s3_put` and `odyn.s3_get` for persistence.
+- **State Hash Anchoring**: After writing data, the app computes a Keccak256 state hash and updates it on-chain via `updateStateHash(bytes32)`.
+- **Related Code**: [enclave/routes.py](enclave/routes.py), [contracts/src/NovaAppBase.sol](contracts/src/NovaAppBase.sol)
 
-### 2) Scheduled External Data → On-chain Update
-`tasks.background_task()` runs every 5 minutes:
-- Fetches external data (default example: ETH price)
-- Saves to S3
-- Computes state hash
-- Signs `updateStateHash`
+### 3) Trustless RPC (Helios)
+Eliminate intermediate trust by using a built-in light client.
+- **Helios Integration**: The enclave runs a Helios instance that syncs with **Base Sepolia**.
+- **Verifiable State**: `chain.py` uses Helios (port 8545) for all blockchain reads, ensuring data integrity.
+- **Related Code**: [enclave/chain.py](enclave/chain.py), [enclaver.yaml](enclaver.yaml)
 
-Related code:
-- [enclave/tasks.py](enclave/tasks.py)
+### 4) Automated Oracle & Event Tasks
+Background workers handle time-gated or event-driven business logic.
+- **Periodic Oracle**: `tasks.background_task()` fetches external data (e.g., ETH price) every 15 minutes.
+- **Event Listener**: `poll_contract_events()` watches for on-chain requests (e.g., `StateUpdateRequested`) to trigger TEE responses.
+- **Related Code**: [enclave/tasks.py](enclave/tasks.py)
 
-### 3) On-chain Event Listener → Response
-The contract emits:
-```
-StateUpdateRequested(bytes32 requestedHash, address requester)
-```
-The enclave polls and responds by:
-- Watching `StateUpdateRequested`
-- Computing local state hash
-- Signing `updateStateHash` (optional broadcast)
+### 5) End-to-End Encryption (RA-TLS)
+Secure communication directly between the user's browser and the TEE.
+- **RA-TLS Flow**: Frontend fetches the attestation, verifies PCRs, and establishes an encrypted channel.
+- **ECDH + AES-GCM**: Key exchange (X25519) and payload encryption happen transparently in the demo UI.
+- **Related Code**: [enclave/routes.py](enclave/routes.py), [frontend/src/lib/crypto.ts](frontend/src/lib/crypto.ts)
 
-Related code:
-- [enclave/tasks.py](enclave/tasks.py)
-- [contracts/src/NovaAppBase.sol](contracts/src/NovaAppBase.sol)
-
-### 4) Public APIs + RA-TLS
-- `/.well-known/attestation`: public attestation endpoint (CBOR)
-- `/api/echo`: encrypted payloads (ECDH + AES-GCM)
-- `/api/encryption/*`: encrypt/decrypt helpers
-
-RA-TLS flow in the frontend:
-1. Fetch attestation
-2. Verify PCR / public key
-3. Derive ECDH shared secret
-4. Send encrypted payloads
-
-Related code:
-- [enclave/routes.py](enclave/routes.py)
-- [frontend/src/lib/crypto.ts](frontend/src/lib/crypto.ts)
-- [frontend/src/lib/attestation.ts](frontend/src/lib/attestation.ts)
-
-### 5) Frontend
-Located in `/frontend`, includes:
-- RA-TLS demo
-- S3 storage demo
-- Oracle demo
-- Event polling status
-
-### 6) Trustless RPC (Helios)
-`chain.py` uses **Web3.py** and supports the **Helios light client** for verifiable RPC. 
-- In development (`IN_ENCLAVE=false`), it connects to a mock RPC.
-- In production (`IN_ENCLAVE=true`), it connects to a local Helios instance (port 8545).
-
-The `wait_for_helios()` helper ensures the light client is synced before the app starts.
+### 6) Modern Developer Stack
+A complete foundation for rapid development.
+- **Next.js Frontend**: A modern UI for interacting with storage, oracles, and encrypted APIs.
+- **Mock Environment**: Develop locally without a TEE using `IN_ENCLAVE=false` and `odyn.py` (Mock mode).
+- **Related Code**: [/frontend](/frontend), [enclave/odyn.py](enclave/odyn.py)
 
 ---
 
@@ -157,20 +130,35 @@ Note: Per template configuration, on-chain settings are read from [enclave/confi
 
 ---
 
-## APIs
+## API Reference
 
+### Identity & Encryption (Pillar 1 & 5)
 | Endpoint | Method | Description |
 |----------|--------|------|
-| `/.well-known/attestation` | POST | Raw CBOR attestation |
-| `/api/attestation` | GET | Base64-encoded attestation |
-| `/api/echo` | POST | Encrypted/plain echo |
-| `/api/storage` | POST/GET | S3 read/write + hash anchoring |
-| `/api/storage/{key}` | GET/DELETE | Single key access |
-| `/api/oracle/update-now` | POST | Fetch ETH/USD and update on-chain price |
-| `/api/events/oracle` | GET | Fetch oracle-related contract events (lookback) |
-| `/api/oracle/price` | GET | Legacy alias of update-now |
-| `/api/contract/update-state` | POST | Manual state hash update |
-| `/status` | GET | TEE status |
+| `/.well-known/attestation` | POST | Public RA-TLS attestation (raw CBOR) |
+| `/api/attestation` | GET | Base64-encoded attestation document |
+| `/api/echo` | POST | Supports both encrypted and plain payloads |
+| `/api/encryption/public-key` | GET | Enclave's P-384 public key |
+
+### Storage & State (Pillar 2)
+| Endpoint | Method | Description |
+|----------|--------|------|
+| `/api/storage` | POST/GET | S3 read/write + optional on-chain anchoring |
+| `/api/storage/{key}` | GET/DELETE | Direct access to S3 keys |
+| `/api/contract/update-state` | POST | Manually sign a state hash update transaction |
+
+### Oracle & Events (Pillar 4)
+| Endpoint | Method | Description |
+|----------|--------|------|
+| `/api/oracle/update-now` | POST | Manual trigger for ETH/USD fetch and on-chain update |
+| `/api/events/oracle` | GET | View logs of contract events handled by the enclave |
+| `/api/event-monitor/status` | GET | Status of the background polling tasks |
+
+### System
+| Endpoint | Method | Description |
+|----------|--------|------|
+| `/status` | GET | TEE health and basic environment info |
+| `/api/random` | GET | Generate random bytes using NSM hardware RNG |
 
 ---
 
@@ -204,9 +192,6 @@ This template also includes `ETHPriceOracleApp`, which adds an on-chain ETH/USD 
 
 ## FAQ
 
-**Q: Why does local S3 write fail?**
-A: The mock service is not guaranteed to be persistent. On-chain signing is testable, but S3 requires a real enclave.
-
 **Q: How is RA-TLS verified?**
 A: The frontend parses the attestation document and verifies PCRs/public key.
 
@@ -219,6 +204,7 @@ A: The default allows any origin (`CORS_ORIGINS=*`). If you need credentials (co
 ---
 
 ## References
+- Helios Trustless RPC: https://github.com/sparsity-xyz/enclaver/blob/sparsity/docs/helios_rpc.md
 - Odyn Internal API: https://github.com/sparsity-xyz/enclaver/blob/sparsity/docs/odyn.md
 - Internal API Reference: https://github.com/sparsity-xyz/enclaver/blob/sparsity/docs/internal_api.md
 - Mockup Service: https://github.com/sparsity-xyz/enclaver/blob/sparsity/docs/internal_api_mockup.md

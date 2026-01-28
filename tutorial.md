@@ -6,13 +6,13 @@ This tutorial guides you through developing a production-ready, verifiable TEE a
 
 ## Table of Contents
 1. [Architecture Overview](#1-architecture-overview)
-2. [Setup Development Environment](#2-setup-development-environment)
-3. [Develop Enclave Application](#3-develop-enclave-application)
-4. [Develop Frontend Interface](#4-develop-frontend-interface)
-5. [Smart Contract & The Trust Anchor](#5-smart-contract--the-trust-anchor)
-6. [Bundle and Test Locally](#6-bundle-and-test-locally)
-7. [Deploy to Nova Platform](#7-deploy-to-nova-platform)
-8. [Verify & Troubleshooting](#8-verify--troubleshooting)
+2. [Development Environment Setup](#2-development-environment-setup)
+3. [Smart Contract Deployment](#3-smart-contract-deployment)
+4. [Enclave Configuration](#4-enclave-configuration)
+5. [Local Testing (Mock Mode)](#5-local-testing-mock-mode)
+6. [Building for Production](#6-building-for-production)
+7. [Deploying to Nova Console](#7-deploying-to-nova-console)
+8. [Verifying Your Application](#8-verifying-your-application)
 
 ---
 
@@ -31,167 +31,199 @@ The Nova ecosystem consists of several components working together to ensure ver
 | **Nova ZKP Registry** | Generates and stores Zero-Knowledge Proofs for TEE attestation, allowing for ultra-fast on-chain verification. |
 
 ### 1.2 Data Flow
-The following diagram illustrates how your application interacts with the user and the blockchain:
+The following diagram illustrates how your application interacts with the user, the platform, and the blockchain. Note the distinction between the one-time **Registration Phase** and the per-request **RA-TLS Phase**.
 
 ```mermaid
 sequenceDiagram
     participant U as User (Frontend)
-    participant E as Enclave (TEE)
+    participant ZKP as ZKP Registration Service
     participant NR as Nova Registry
-    participant ZKP as Nova ZKP Registry
+    participant E as Enclave (TEE)
+    participant Helios as Helios Light Client
     participant AC as App Contract
     
+    rect rgb(255, 245, 230)
+        Note over ZKP,AC: Phase 1: Registration (Platform Automated)
+        ZKP->>E: 1. Fetch Attestation & TEE Wallet
+        Note over ZKP: 2. Generate Off-chain ZK Proof
+        ZKP->>NR: 3. Register App with Proof
+        NR->>AC: 4. registerTEEWallet(address)
+        AC-->>AC: Trust Anchor established
+    end
+
     rect rgb(240, 240, 240)
-        Note over U,NR: Phase 1: Identity & Handshake (RA-TLS)
-        U->>E: POST /.well-known/attestation
-        E-->>U: Attestation Doc + Public Key
-        U->>NR: Verify PCRs / Fetch ZKP
-        NR-->>U: Verification Result + Proof
-        U->>U: Establish Shared Secret (ECDH)
+        Note over U,E: Phase 2: Identity & RA-TLS (Local Verification)
+        U->>E: 1. Fetch Attestation (/.well-known/attestation)
+        E-->>U: 2. CBOR Document + Public Key
+        U->>U: 3. Local Decode & PCR Verification (lib/attestation.ts)
+        U->>E: 4. Send Encrypted Payload (ECDH + AES-GCM)
+    end
+
+    rect rgb(230, 240, 255)
+        Note over E,Helios: Phase 3: Trustless RPC (Helios)
+        E->>Helios: JSON-RPC Call (Read Chain)
+        Helios-->>E: Merkle-Proven Result
     end
 
     rect rgb(230, 255, 230)
-        Note over E,AC: Phase 2: Verifiable Anchoring
-        E->>E: Process Data & Sign Result
-        E->>ZKP: Submit State Update + Signature
-        ZKP->>ZKP: Generate Concise Proof (SNARK)
-        ZKP->>AC: Push Verified Update
-        AC-->>AC: Finalize State
+        Note over E,AC: Phase 4: Persistence & Oracle Tasks
+        E->>E: Fetch Data / Update S3
+        E->>E: Sign updateStateHash Transaction
+        E->>AC: Submit Transaction
+        AC-->>AC: Update stateHash
     end
 ```
 
 ---
 
-## 2. Setup Development Environment
+## 2. Development Environment Setup
+
+Ensure you have **Python 3.10+**, **Node.js 18+**, and **Foundry** (for contracts) installed.
 
 ```bash
-# Clone the template
-git clone https://github.com/sparsity-xyz/nova-examples.git
-cd nova-examples/nova-app-template
+# 1. Clone the template
+git clone https://github.com/sparsity-xyz/nova-app-template.git
+cd nova-app-template
 
-# Install all components
-make install-frontend
-make install-enclave
+# 2. Install dependencies (Root)
+# None required at root - managed via Makefile
+
+# 3. Build the frontend (Compiles Next.js into the enclave/ folder)
+make build-frontend
 ```
-
-> [!TIP]
-> **Simulation Mode**: When running locally, the SDK (`odyn.py`) connects to `mockup.sparsity.cloud:18000`. This allows you to test 90% of your logic (signing, S3, attestation) without needing a real TEE.
 
 ---
 
-## 3. Develop Enclave Application
+## 3. Smart Contract Deployment
 
-The enclave is a **FastAPI** service. You can modularize your logic into:
+Your app needs an "Anchor" on-chain. This template uses `ETHPriceOracleApp` which supports state anchoring and oracle prices.
 
-### 3.1 Business Logic & API (`enclave/routes.py`)
-Add your custom endpoints here.
-- Use `odyn.s3_put()` / `odyn.s3_get()` for persistent data.
-- Use `odyn.sign_message()` to prove results were generated by your TEE.
+```bash
+cd contracts
+forge install foundry-rs/forge-std
+forge build
+
+# Deploy to Base Sepolia
+export RPC_URL=https://sepolia.base.org
+export PRIVATE_KEY=<your_wallet_private_key>
+forge script script/Deploy.s.sol:DeployScript --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --broadcast
+
+# 1. Verify the contract on Etherscan/Basescan
+export APP_CONTRACT=<deployed_contract_address>
+export ETHERSCAN_API_KEY=<your_api_key>
+forge verify-contract --chain-id 84532 --watch --etherscan-api-key "$ETHERSCAN_API_KEY" "$APP_CONTRACT" src/ETHPriceOracleApp.sol:ETHPriceOracleApp
+
+# 2. Set the Nova Registry address on your contract
+export NOVA_REGISTRY=0x...
+cast send "$APP_CONTRACT" "setNovaRegistry(address)" "$NOVA_REGISTRY" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+```
+
+---
+
+## 4. Enclave Configuration
+
+Edit `enclave/config.py` to wire your contract into the backend. This file is static and does **not** read environment variables.
 
 ```python
-@router.post("/compute")
-def compute(req: Data):
-    result = perform_sensitive_task(req.val)
-    # Proof of execution
-    return odyn.sign_message(f"Computed: {result}")
+# enclave/config.py
+
+# 1. Update the contract address you just deployed
+CONTRACT_ADDRESS = "0xYourDeployedContractAddress"
+
+# 2. Enable broadcasting if you want the TEE to send txs automatically
+BROADCAST_TX = True
 ```
 
-### 3.2 Background Tasks (`enclave/tasks.py`)
-Ideal for Oracles or state sync.
-- **Oracle Pattern**: Fetch internet data (`requests.get`) -> Process -> Sign Tx -> Push to Chain.
-- **State Hashing**: Periodically hash your S3 state and update the on-chain `stateHash`.
-- **Event Listener**: Poll `StateUpdateRequested` events and respond with a signed on-chain update.
-
 ---
 
-## CORS Configuration (Cross-Origin Frontends)
+## 5. Local Testing (Mock Mode)
 
-Because the frontend may be hosted on any domain, the template allows cross-origin access by default (`CORS_ORIGINS=*`). If you need credentials (cookie/Authorization), set `CORS_ORIGINS` to an explicit allowlist and keep `CORS_ALLOW_CREDENTIALS=true`. Configuration lives in [enclave/app.py](enclave/app.py).
-
-## 4. Develop Frontend Interface
-
-Located in `frontend/`. It's a **Next.js** application.
-
-- **`lib/crypto.ts`**: Handles client-side ECDH and AES-GCM.
-- **`lib/attestation.ts`**: Handles COSE/CBOR parsing for Nitro documents.
-- **`app/page.tsx`**: The main UI. Use `EnclaveClient.callEncrypted()` to send data that only the TEE can see.
-
----
-
-## 5. Smart Contract & The Trust Anchor
-
-To make your app verifiable, deploy an **app contract** that extends `NovaAppBase`.
-
-This template includes `ETHPriceOracleApp` (recommended) which adds an on-chain ETH/USD price + request/update events on top of `NovaAppBase`.
-
-### Automated Registration
-Nova platform bridges the gap between your TEE and your Contract:
-1. **Deploy Contract**: Deploy `ETHPriceOracleApp` (or any `NovaAppBase`-derived contract) to your target chain.
-2. **Nova Setup**: In the Nova Console, enter your **Contract Address** during app creation.
-3. **Registration**: When the TEE starts, Nova Platform automatically registers its hardware wallet address in your contract by calling `registerTEEWallet` via the Nova Registry.
-
-### Nova App Contract Deployment Flow
-1. Deploy the app contract (must extend [contracts/src/ISparsityApp.sol](contracts/src/ISparsityApp.sol))
-2. Verify the contract on Base Sepolia
-3. Call `setNovaRegistry` to set the Nova Registry contract address
-4. Create the app on the Nova platform with the contract address
-5. ZKP Registration Service generates proofs and registers/verifies the app in the Nova Registry
-6. Nova Registry calls `registerTEEWallet` on your app contract
-
----
-
-## 6. Bundle and Test Locally
-
-Before deployment, ensure the frontend and backend work together:
+Before deploying a real TEE, verify your logic locally.
 
 ```bash
-# 1. Build and sync frontend
-make build-frontend
+# Terminal 1: Start Backend (Mock Mode)
+make dev-backend
 
-# 2. Run local Docker (simulates the TEE environment)
-make docker-run
+# Terminal 2: Start Frontend
+make dev-frontend
 ```
 
-Visit `http://localhost:8000/frontend`. Test the S3 storage and Oracle demo.
+### 5.1 Mock Registration (Required for Mock Testing)
+In Mock Mode, your TEE wallet is generated locally. Since you aren't running on the production Nova Platform yet, you must manually register this mock address in your contract to bypass the `onlyTEE` checks:
+
+1.  **Get your Mock TEE Address**: Look at the terminal where `make dev-backend` is running. You will see:
+    `[Odyn] TEE Identity: 0x...`
+2.  **Register it manually**:
+    ```bash
+    # 1. Set yourself as the 'Temporary Registry' (if not already set)
+    export YOUR_ADDRESS=<your_deployer_address>
+    cast send "$APP_CONTRACT" "setNovaRegistry(address)" "$YOUR_ADDRESS" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+
+    # 2. Manually register the Mock TEE Identity
+    export MOCK_TEE_ID=<the_address_from_logs>
+    cast send "$APP_CONTRACT" "registerTEEWallet(address)" "$MOCK_TEE_ID" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+    ```
+    *Note: In production on the Sparsity Cloud, these steps are handled automatically by the Nova ZKP Registry.*
+
+### 5.2 Test Frontend
+1.  Open [http://localhost:3000](http://localhost:3000).
+2.  Click **Connect** to establish an RA-TLS session with your local mock backend.
+3.  Try the **S3 Storage** or **Oracle Update** features.
 
 ---
 
-## 7. Deploy to Nova Platform
+## 6. Building for Production
 
-### Step 2: Create App on Nova
-Go to the [Nova Platform Console](https://nova.sparsity.cloud), click **Create App**, and:
-1. Select your repository/branch.
-2. Enter **8000** as the **App Listening Port**.
-3. **Register App in Nova Registry**: This happens automatically when you create the app; Nova assigns a unique App ID and initializes the registry entry.
-4. **Enter your Contract Address**: This is the address of your deployed app contract (e.g. `ETHPriceOracleApp`).
-5. Configure your S3 credentials if using persistent storage.
+When ready, prepare the final TEE container.
 
-> [!IMPORTANT]
-> This repo's enclave code reads the contract address from [enclave/config.py](enclave/config.py) (`CONTRACT_ADDRESS`). Ensure the value committed/configured there matches what you enter in the Nova Console.
+```bash
+# 1. Final frontend build & sync
+make build-frontend
 
-> [!NOTE]
-> **Automatic Management**: In production, Nova automatically handles **S3 buckets** and **Egress policies**. The platform injects these configurations directly into your enclave at runtime.
+# 2. Build Docker Image
+make build-docker
+
+# 3. Build Enclave (Generates the .eif file)
+make build-enclave
+```
 
 ---
 
-## 8. Verify & Troubleshooting
+## 7. Deploying to Nova Console
 
-### Verification Checklist
-- [ ] **Shield Icon**: In the demo UI, check if the PCR measurements match your build.
-- [ ] **On-Chain Check**: Verify the `teeWalletAddress` in your contract matches the address in the `/status` endpoint.
-- [ ] **Encryption**: Confirm `/api/echo` works via "Encrypted Send" (this proves RA-TLS is healthy).
+1. **GitHub**: Push your code (including the updated `config.py`) to your repository.
+2. **Nova Console**: Go to [nova.sparsity.cloud](https://nova.sparsity.cloud).
+3. **App Creation**:
+    - **Repository**: Select your repo.
+    - **App Listening Port**: `8000`.
+    - **Contract Address**: Enter your `APP_CONTRACT` address.
+    - **Trustless RPC (Helios)**: Enabled (Ensures verifiable blockchain state).
+    - **S3 Storage**: Enabled (The platform will automatically provision the bucket).
+4. **Deploy**: Click "Deploy". Nova will build your EIF, launch the Nitro Enclave, and handle the ZKP registration.
 
-### Common Issues
-| Issue | Potential Cause | Solution |
-|-------|-------|----------|
-| **404 on UI** | Frontend not bundled | Run `make build-frontend` before building the image. |
-| **Attestation Fail** | Non-TEE environment | Check `IN_ENCLAVE` variable; ensure `make dev-enclave` is used for local tests. |
-| **S3 Error** | Provisioning delay | Wait 1-2 minutes after first deployment for S3 permissions to propagate. |
-| **Contract Fail** | Wrong Address | Ensure the address in Nova Console matches your deployed contract. |
+---
+
+## 8. Verifying Your Application
+
+Once the status is **Running**:
+
+1. **RA-TLS Handshake**: Use the "Encrypted Echo" feature in the UI. If it receives a reply, the RA-TLS handshake succeeded.
+2. **Identity**: Copy the TEE address from the UI and verify it matches the `teeWallet` stored in your smart contract.
+3. **State Anchoring**: Change a value in S3 storage and check if your contract's `stateHash` updates on Etherscan.
+4. **Trustless RPC**: Check the `enclave` logs in Nova Console to see Helios syncing blocks from Base Sepolia.
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| **Registry Error** | `setNovaRegistry` skipped | Ensure you called `setNovaRegistry` on your contract BEFORE deploying to Nova. |
+| **Helios Sync Stuck** | No execution RPC | Ensure "Trustless RPC" is enabled in Nova Console during deployment. |
+| **S3 Access Denied** | Not in TEE | S3 storage only works in a real enclave environment or when configured via Nova. |
+| **404 on UI** | Missing bundle | Ensure `make build-frontend` was run before `make build-docker`. |
 
 ---
 
 ## Summary
-You have built a fully verifiable application! Your code is now protected by **AWS Nitro** hardware, your identity is proven via **Attestation**, and your state is anchored to your **App Contract**. 
-
-**Ready to scale?** Invite users to verify your PCR measurements and prove your app is running exactly the code you promised. 🚀🛡️
+Congratulations! You've deployed a verifiable application that combines **Nitro hardware security**, **Trustless Helios RPC**, and **On-chain State Anchoring**. 🚀

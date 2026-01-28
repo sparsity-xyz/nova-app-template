@@ -40,3 +40,17 @@ storage:
 defaults:
   cpu_count: 2
   memory_mb: 2048
+
+# Helios Ethereum/OP Stack light client RPC (trustless JSON-RPC)
+helios_rpc:
+  enabled: true
+  kind: opstack
+  network: base-sepolia
+  listen_port: 8545
+  # NOTE: execution_rpc is managed/injected by Nova Platform during deployment.
+  # This default is for local enclaver testing.
+  execution_rpc: "https://sepolia.base.org"
+
+# TEE Sidecars / Services
+# Add other sidecars here if needed
+services: []
