@@ -31,7 +31,7 @@ from typing import Optional, TYPE_CHECKING, Dict, Any
 import requests
 from eth_hash.auto import keccak
 
-from chain import compute_state_hash, sign_update_state_hash, sign_update_eth_price, rpc_call_with_failover
+from chain import compute_state_hash, sign_update_state_hash, sign_update_ETH_price, rpc_call_with_failover
 from config import (
     CONTRACT_ADDRESS,
     CHAIN_ID,
@@ -121,7 +121,7 @@ def update_eth_price_on_chain(*, request_id: int, reason: str) -> Dict[str, Any]
     price_usd = fetch_eth_price_usd()
     updated_at = int(datetime.now(tz=timezone.utc).timestamp())
 
-    signed = sign_update_eth_price(
+    signed = sign_update_ETH_price(
         odyn=odyn,
         contract_address=CONTRACT_ADDRESS,
         chain_id=CHAIN_ID,
@@ -246,7 +246,7 @@ def poll_contract_events():
     """Poll for on-chain events and respond.
 
     - Listens for StateUpdateRequested(bytes32,address) and anchors local state hash.
-    - Listens for EthPriceUpdateRequested(uint256,address) and updates ETH price on-chain.
+    - Listens for ETHPriceUpdateRequested(uint256,address) and updates ETH price on-chain.
 
     Logs are stored in app_state["data"]["event_monitor"] for frontend display.
     """
@@ -317,9 +317,9 @@ def poll_contract_events():
         add_log(f"✓ State hash updated on-chain: {state_hash[:18]}...")
 
     # ---------------------------------------------------------------------
-    # Oracle: EthPriceUpdateRequested(uint256,address)
+    # Oracle: ETHPriceUpdateRequested(uint256,address)
     # ---------------------------------------------------------------------
-    oracle_topic0 = "0x" + keccak(b"EthPriceUpdateRequested(uint256,address)").hex()
+    oracle_topic0 = "0x" + keccak(b"ETHPriceUpdateRequested(uint256,address)").hex()
 
     try:
         oracle_logs = rpc_call(
@@ -348,7 +348,7 @@ def poll_contract_events():
                 pending_count += 1
 
     if pending_count > 0:
-        add_log(f"Found {pending_count} pending EthPriceUpdateRequested event(s)")
+        add_log(f"Found {pending_count} pending ETHPriceUpdateRequested event(s)")
 
     # Store recent events for frontend display
     recent_events = []
@@ -360,7 +360,7 @@ def poll_contract_events():
             tx_hash = log.get("transactionHash", "")
             is_handled = str(request_id) in handled
             recent_events.append({
-                "type": "EthPriceUpdateRequested",
+                "type": "ETHPriceUpdateRequested",
                 "request_id": request_id,
                 "block_number": block_num,
                 "tx_hash": tx_hash,

@@ -34,12 +34,13 @@ from datetime import datetime
 from typing import Optional, Dict, Any, TYPE_CHECKING
 
 import requests
+from web3 import Web3
 from eth_hash.auto import keccak
 from fastapi import APIRouter, HTTPException, Body, Response
 from pydantic import BaseModel
 
 from chain import compute_state_hash, sign_update_state_hash, get_onchain_state_hash
-from chain import sign_update_eth_price, rpc_call_with_failover, _chain
+from chain import sign_update_ETH_price, rpc_call_with_failover, _chain
 from config import CONTRACT_ADDRESS, CHAIN_ID, BROADCAST_TX, ANCHOR_ON_WRITE
 
 # Type hint for Odyn (actual import would cause circular dependency)
@@ -241,7 +242,7 @@ def echo_example(payload: Dict[str, Any] = Body(...)):
         raise HTTPException(status_code=500, detail="Odyn not initialized")
 
     try:
-        address = odyn.eth_address()
+        address = Web3.to_checksum_address(odyn.eth_address())
     except Exception:
         address = "unavailable"
 
@@ -375,7 +376,7 @@ def save_to_storage(req: StorageRequest):
             else:
                 # Get TEE address
                 try:
-                    tee_address = odyn.eth_address()
+                    tee_address = Web3.to_checksum_address(odyn.eth_address())
                     anchor_status["tee_address"] = tee_address
                 except Exception as e:
                     anchor_status["anchor_error"] = f"Failed to get TEE wallet address: {e}"
@@ -388,8 +389,8 @@ def save_to_storage(req: StorageRequest):
                     from chain import _rpc_call
                     balance_hex = _rpc_call("", "eth_getBalance", [tee_address, "latest"])
                     balance_wei = int(balance_hex, 16)
-                    balance_eth = balance_wei / 1e18
-                    anchor_status["tee_balance_eth"] = balance_eth
+                    balance_ETH = balance_wei / 1e18
+                    anchor_status["tee_balance_ETH"] = balance_ETH
                     if balance_wei == 0:
                         anchor_status["anchor_error"] = f"TEE wallet {tee_address} has no funds. Please send some ETH to cover gas."
                         anchor_status["error_type"] = "tee_wallet_no_funds"
@@ -584,7 +585,7 @@ def read_contract():
         "contract_address": CONTRACT_ADDRESS,
         "rpc_url": _chain.endpoint,
         "chain_id": CHAIN_ID,
-        "tee_address": odyn.eth_address() if odyn else None,
+        "tee_address": Web3.to_checksum_address(odyn.eth_address()) if odyn else None,
         "note": "Full contract read requires web3.py integration"
     }
 
@@ -647,7 +648,7 @@ def get_oracle_price_tx():
 
 @router.post("/oracle/update-now")
 def update_oracle_price_now():
-    """Fetch ETH/USD and update the on-chain app contract via updateEthPrice.
+    """Fetch ETH/USD and update the on-chain app contract via updateETHPrice.
 
     - If BROADCAST_TX is True, the enclave will attempt to send the tx via RPC.
     - Otherwise returns a raw signed tx for the caller to broadcast.
@@ -664,9 +665,9 @@ def update_oracle_price_now():
             },
         )
 
-    # Get TEE wallet address for diagnostics
+    # Get TEE address
     try:
-        tee_address = odyn.eth_address()
+        tee_address = Web3.to_checksum_address(odyn.eth_address())
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -718,7 +719,7 @@ def update_oracle_price_now():
 
     # Sign and optionally broadcast
     try:
-        signed = sign_update_eth_price(
+        signed = sign_update_ETH_price(
             odyn=odyn,
             contract_address=CONTRACT_ADDRESS,
             chain_id=CHAIN_ID,
@@ -814,8 +815,8 @@ def get_oracle_events(lookback: int = 1000):
     from_block = max(current_block - max(0, int(lookback)), 0)
 
     # Topics
-    req_topic0 = "0x" + keccak(b"EthPriceUpdateRequested(uint256,address)").hex()
-    upd_topic0 = "0x" + keccak(b"EthPriceUpdated(uint256,uint256,uint256,uint256)").hex()
+    req_topic0 = "0x" + keccak(b"ETHPriceUpdateRequested(uint256,address)").hex()
+    upd_topic0 = "0x" + keccak(b"ETHPriceUpdated(uint256,uint256,uint256,uint256)").hex()
 
     try:
         req_logs = _rpc_call(
@@ -832,7 +833,7 @@ def get_oracle_events(lookback: int = 1000):
             status_code=502,
             detail={
                 "error": "rpc_failed",
-                "message": f"Failed to fetch EthPriceUpdateRequested logs: {e}",
+                "message": f"Failed to fetch ETHPriceUpdateRequested logs: {e}",
                 "hint": "Check if CONTRACT_ADDRESS is correct and the contract is deployed.",
                 "contract_address": CONTRACT_ADDRESS,
                 "from_block": from_block,
@@ -855,7 +856,7 @@ def get_oracle_events(lookback: int = 1000):
             status_code=502,
             detail={
                 "error": "rpc_failed",
-                "message": f"Failed to fetch EthPriceUpdated logs: {e}",
+                "message": f"Failed to fetch ETHPriceUpdated logs: {e}",
                 "hint": "Check if CONTRACT_ADDRESS is correct and the contract is deployed.",
                 "contract_address": CONTRACT_ADDRESS,
                 "from_block": from_block,
@@ -876,7 +877,7 @@ def get_oracle_events(lookback: int = 1000):
         request_id = _parse_uint256(topics[1]) if len(topics) > 1 else 0
         requester = "0x" + topics[2][-40:] if len(topics) > 2 else None
         requests_out.append({
-            "type": "EthPriceUpdateRequested",
+            "type": "ETHPriceUpdateRequested",
             "request_id": request_id,
             "requester": requester,
             "block_number": int(log.get("blockNumber", "0x0"), 16),
@@ -895,7 +896,7 @@ def get_oracle_events(lookback: int = 1000):
         updated_at = int(data_hex[64:128] or "0", 16) if len(data_hex) >= 128 else 0
         block_number_emitted = int(data_hex[128:192] or "0", 16) if len(data_hex) >= 192 else 0
         updates_out.append({
-            "type": "EthPriceUpdated",
+            "type": "ETHPriceUpdated",
             "request_id": request_id,
             "price_usd": price_usd,
             "updated_at": updated_at,
@@ -919,8 +920,8 @@ def get_oracle_events(lookback: int = 1000):
 @router.post("/events/handle-pending")
 def handle_pending_requests(lookback: int = 1000):
     """
-    Scan for pending EthPriceUpdateRequested events and handle each by
-    fetching ETH/USD and submitting updateEthPrice.
+    Scan for pending ETHPriceUpdateRequested events and handle each by
+    fetching ETH/USD and submitting updateETHPrice.
     """
     if not odyn:
         raise HTTPException(status_code=500, detail="Odyn not initialized")
@@ -940,7 +941,7 @@ def handle_pending_requests(lookback: int = 1000):
     from_block = max(current_block - max(0, int(lookback)), 0)
 
     # Get request events
-    req_topic0 = "0x" + keccak(b"EthPriceUpdateRequested(uint256,address)").hex()
+    req_topic0 = "0x" + keccak(b"ETHPriceUpdateRequested(uint256,address)").hex()
     req_logs = _rpc_call(
         "eth_getLogs",
         [{
@@ -979,7 +980,7 @@ def handle_pending_requests(lookback: int = 1000):
 
     # Get TEE address and balance
     try:
-        tee_address = odyn.eth_address()
+        tee_address = Web3.to_checksum_address(odyn.eth_address())
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -1029,7 +1030,7 @@ def handle_pending_requests(lookback: int = 1000):
     for req in pending:
         request_id = req["request_id"]
         try:
-            signed = sign_update_eth_price(
+            signed = sign_update_ETH_price(
                 odyn=odyn,
                 contract_address=CONTRACT_ADDRESS,
                 chain_id=CHAIN_ID,

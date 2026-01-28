@@ -8,8 +8,8 @@ import {NovaAppBase} from "./NovaAppBase.sol";
  * @dev Example Nova app that stores an ETH/USD price updated by the TEE.
  *
  * Flow:
- *  - Any account can call requestEthPriceUpdate() to emit an on-chain request event.
- *  - The enclave listens for the request event and responds by submitting updateEthPrice(...).
+ *  - Any account can call requestETHPriceUpdate() to emit an on-chain request event.
+ *  - The enclave listens for the request event and responds by submitting updateETHPrice(...).
  *  - The enclave may also update periodically or via an API-triggered update.
  */
 contract ETHPriceOracleApp is NovaAppBase {
@@ -20,7 +20,7 @@ contract ETHPriceOracleApp is NovaAppBase {
     uint256 public lastUpdatedBlock;
 
     /// @notice Latest ETH/USD price (integer USD, no decimals) written by the TEE
-    uint256 public ethUsdPrice;
+    uint256 public ETHUsdPrice;
 
     /// @notice Timestamp (unix seconds) for the latest update
     uint256 public lastPriceUpdatedAt;
@@ -29,10 +29,13 @@ contract ETHPriceOracleApp is NovaAppBase {
     uint256 public nextRequestId;
 
     /// @notice Emitted when a price update is requested
-    event EthPriceUpdateRequested(uint256 indexed requestId, address indexed requester);
+    event ETHPriceUpdateRequested(
+        uint256 indexed requestId,
+        address indexed requester
+    );
 
     /// @notice Emitted when the price is updated
-    event EthPriceUpdated(
+    event ETHPriceUpdated(
         uint256 indexed requestId,
         uint256 priceUsd,
         uint256 updatedAt,
@@ -46,9 +49,9 @@ contract ETHPriceOracleApp is NovaAppBase {
      * @notice Emit an on-chain request for the enclave to update ETH/USD price.
      * @return requestId The request id for correlation.
      */
-    function requestEthPriceUpdate() external returns (uint256 requestId) {
+    function requestETHPriceUpdate() external returns (uint256 requestId) {
         requestId = ++nextRequestId;
-        emit EthPriceUpdateRequested(requestId, msg.sender);
+        emit ETHPriceUpdateRequested(requestId, msg.sender);
     }
 
     /**
@@ -57,13 +60,17 @@ contract ETHPriceOracleApp is NovaAppBase {
      * @param priceUsd ETH/USD as integer USD.
      * @param updatedAt Unix seconds timestamp.
      */
-    function updateEthPrice(uint256 requestId, uint256 priceUsd, uint256 updatedAt) external onlyTEE {
+    function updateETHPrice(
+        uint256 requestId,
+        uint256 priceUsd,
+        uint256 updatedAt
+    ) external onlyTEE {
         require(priceUsd > 0, "ETHPriceOracleApp: invalid price");
 
-        ethUsdPrice = priceUsd;
+        ETHUsdPrice = priceUsd;
         lastPriceUpdatedAt = updatedAt;
 
-        emit EthPriceUpdated(requestId, priceUsd, updatedAt, block.number);
+        emit ETHPriceUpdated(requestId, priceUsd, updatedAt, block.number);
     }
 
     /**
@@ -78,5 +85,4 @@ contract ETHPriceOracleApp is NovaAppBase {
 
         emit StateUpdated(_newHash, block.number);
     }
-
 }

@@ -140,6 +140,20 @@ BROADCAST_TX = True
 
 Before deploying a real TEE, verify your logic locally.
 
+### 5.1 Environment Setup
+Create a virtual environment and install dependencies:
+
+```bash
+# 1. Create and activate venv
+python3 -m venv venv
+source venv/bin/activate
+
+# 2. Install dependencies
+pip install -r enclave/requirements.txt
+```
+
+### 5.2 Launching the App
+
 ```bash
 # Terminal 1: Start Backend (Mock Mode)
 make dev-backend
@@ -148,7 +162,7 @@ make dev-backend
 make dev-frontend
 ```
 
-### 5.1 Mock Registration (Required for Mock Testing)
+### 5.3 Mock Registration (Required for Mock Testing)
 In Mock Mode, your TEE wallet is generated locally. Since you aren't running on the production Nova Platform yet, you must manually register this mock address in your contract to bypass the `onlyTEE` checks:
 
 1.  **Get your Mock TEE Address**: Look at the terminal where `make dev-backend` is running. You will see:
@@ -165,26 +179,23 @@ In Mock Mode, your TEE wallet is generated locally. Since you aren't running on 
     ```
     *Note: In production on the Sparsity Cloud, these steps are handled automatically by the Nova ZKP Registry.*
 
-### 5.2 Test Frontend
-1.  Open [http://localhost:3000](http://localhost:3000).
+### 5.4 Test Frontend
+1.  Open [http://localhost:3000/frontend](http://localhost:3000/frontend).
 2.  Click **Connect** to establish an RA-TLS session with your local mock backend.
 3.  Try the **S3 Storage** or **Oracle Update** features.
 
 ---
 
-## 6. Building for Production
+## 6. Building for Docker
 
 When ready, prepare the final TEE container.
 
 ```bash
-# 1. Final frontend build & sync
-make build-frontend
-
-# 2. Build Docker Image
+# 1. Build Docker Image
 make build-docker
 
-# 3. Build Enclave (Generates the .eif file)
-make build-enclave
+# 2. run docker contrainer
+docker run -p 8000:8000 -e IN_ENCLAVE=false nova-app-template:latest
 ```
 
 ---

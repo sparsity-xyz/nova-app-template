@@ -31,6 +31,7 @@ import json
 import os
 from pathlib import Path
 from typing import Optional
+from web3 import Web3
 
 import uvicorn
 from fastapi import FastAPI
@@ -170,7 +171,7 @@ app_state = {
 class AppStatus(BaseModel):
     """Response model for /status endpoint."""
     status: str
-    eth_address: Optional[str] = None
+    ETH_address: Optional[str] = None
     contract_address: Optional[str] = None
     cron_info: Optional[dict] = None
     last_state_hash: Optional[str] = None
@@ -184,10 +185,10 @@ def health_check():
 def get_status():
     """Get TEE identity and cron status."""
     try:
-        address = odyn.eth_address()
+        address = Web3.to_checksum_address(odyn.eth_address())
         return AppStatus(
             status="running",
-            eth_address=address,
+            ETH_address=address,
             contract_address=config.CONTRACT_ADDRESS or None,
             cron_info={
                 "counter": app_state["cron_counter"],

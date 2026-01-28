@@ -101,10 +101,10 @@ Anyone can request a price update by emitting an event on-chain:
 
 ```shell
 cast send "$APP_CONTRACT" \
-	"requestEthPriceUpdate()" \
+	"requestETHPriceUpdate()" \
 	--rpc-url "$RPC_URL" \
 	--private-key "$PRIVATE_KEY"
 ```
 
-The enclave's event monitor will detect `EthPriceUpdateRequested` and respond by submitting `updateEthPrice(...)`.
+The enclave's event monitor will detect `ETHPriceUpdateRequested` and respond by submitting `updateETHPrice(...)`.
 ```

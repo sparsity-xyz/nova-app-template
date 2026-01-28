@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
 
-import "./ISparsityApp.sol";
+import {ISparsityApp} from "./ISparsityApp.sol";
 
 /**
  * @title NovaAppBase
@@ -27,24 +27,42 @@ contract NovaAppBase is ISparsityApp {
     event NovaRegistrySet(address indexed registry);
 
     /// @notice Emitted when ownership is transferred
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event OwnershipTransferred(
+        address indexed previousOwner,
+        address indexed newOwner
+    );
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "NovaAppBase: caller is not the owner");
+        _checkOwner();
         _;
     }
 
     modifier onlyTEE() {
-        require(
-            msg.sender == teeWalletAddress,
-            "NovaAppBase: caller is not the TEE"
-        );
+        _checkTEE();
         _;
     }
 
     modifier onlyRegistry() {
-        require(msg.sender == novaRegistry, "NovaAppBase: caller is not registry");
+        _checkRegistry();
         _;
+    }
+
+    function _checkOwner() internal view {
+        require(msg.sender == owner, "NovaAppBase: caller is not the owner");
+    }
+
+    function _checkTEE() internal view {
+        require(
+            msg.sender == teeWalletAddress,
+            "NovaAppBase: caller is not the TEE"
+        );
+    }
+
+    function _checkRegistry() internal view {
+        require(
+            msg.sender == novaRegistry,
+            "NovaAppBase: caller is not registry"
+        );
     }
 
     constructor() {
@@ -58,7 +76,10 @@ contract NovaAppBase is ISparsityApp {
      */
     function setNovaRegistry(address _registry) external override onlyOwner {
         require(_registry != address(0), "NovaAppBase: invalid registry");
-        require(novaRegistry == address(0), "NovaAppBase: registry already set");
+        require(
+            novaRegistry == address(0),
+            "NovaAppBase: registry already set"
+        );
         novaRegistry = _registry;
         emit NovaRegistrySet(_registry);
     }
@@ -68,12 +89,17 @@ contract NovaAppBase is ISparsityApp {
      * @param teeWalletAddress_ The Ethereum address from the TEE's Odyn API
      * @dev Can only be called once by the Nova Registry
      */
-    function registerTEEWallet(address teeWalletAddress_) external override onlyRegistry {
+    function registerTEEWallet(
+        address teeWalletAddress_
+    ) external override onlyRegistry {
         require(
             teeWalletAddress == address(0),
             "NovaAppBase: TEE wallet already registered"
         );
-        require(teeWalletAddress_ != address(0), "NovaAppBase: invalid TEE wallet");
+        require(
+            teeWalletAddress_ != address(0),
+            "NovaAppBase: invalid TEE wallet"
+        );
 
         teeWalletAddress = teeWalletAddress_;
         emit TEEWalletRegistered(teeWalletAddress_);
@@ -84,7 +110,10 @@ contract NovaAppBase is ISparsityApp {
      * @param newOwner The new owner address
      */
     function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "NovaAppBase: new owner is zero address");
+        require(
+            newOwner != address(0),
+            "NovaAppBase: new owner is zero address"
+        );
         emit OwnershipTransferred(owner, newOwner);
         owner = newOwner;
     }

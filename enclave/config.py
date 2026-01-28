@@ -17,11 +17,11 @@ CHAIN_ID: int = 84532
 
 # Deployed app contract address (ETHPriceOracleApp / NovaAppBase-derived)
 # Example: "0x1234..."
-CONTRACT_ADDRESS: str = "0x6Ab9DbaA6d57ecb3C9145c7e08627940aab4cf80"
+CONTRACT_ADDRESS: str = "0x66Ac7d512e0df4abaF822454d08067D3EAAf3AB4"
 
 # If true, enclave will broadcast signed transactions to RPC.
 # If false, enclave returns raw signed txs.
-BROADCAST_TX: bool = False
+BROADCAST_TX: bool = True
 
 # Storage demo: anchor state hash on writes
 ANCHOR_ON_WRITE: bool = True

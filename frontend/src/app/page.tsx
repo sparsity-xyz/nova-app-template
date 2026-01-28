@@ -18,6 +18,11 @@ interface ApiResponse {
     type?: string;
 }
 
+// Base Sepolia block explorer
+const BASESCAN_URL = 'https://sepolia.basescan.org';
+const addressLink = (addr: string) => `${BASESCAN_URL}/address/${addr}`;
+const txLink = (hash: string) => `${BASESCAN_URL}/tx/${hash}`;
+
 export default function Home() {
     const [client] = useState(() => new EnclaveClient());
     const [status, setStatus] = useState<ConnectionStatus>({
@@ -72,7 +77,7 @@ export default function Home() {
             setStatus({
                 ...status,
                 connected: true,
-                teeAddress: statusInfo.eth_address,
+                teeAddress: statusInfo.ETH_address,
                 error: undefined,
             });
             setResponsesByTab(prev => ({
@@ -315,15 +320,31 @@ export default function Home() {
                             <div className="space-y-4">
                                 <div>
                                     <label className="text-xs text-slate-500 block mb-1">TEE Wallet Address</label>
-                                    <code className="text-xs bg-slate-50 px-2 py-1 rounded block truncate border border-slate-200 text-slate-700">
+                                    <a
+                                        href={addressLink(status.teeAddress || '')}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs bg-slate-50 px-2 py-1 rounded block truncate border border-slate-200 text-blue-600 hover:text-blue-800 hover:underline"
+                                    >
                                         {status.teeAddress}
-                                    </code>
+                                    </a>
                                 </div>
                                 <div>
                                     <label className="text-xs text-slate-500 block mb-1">App Contract Address</label>
-                                    <code className="text-xs bg-slate-50 px-2 py-1 rounded block truncate border border-slate-200 text-slate-700">
-                                        {responsesByTab.identity?.data?.statusInfo?.contract_address || 'Not configured'}
-                                    </code>
+                                    {responsesByTab.identity?.data?.statusInfo?.contract_address ? (
+                                        <a
+                                            href={addressLink(responsesByTab.identity?.data?.statusInfo?.contract_address)}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-xs bg-slate-50 px-2 py-1 rounded block truncate border border-slate-200 text-blue-600 hover:text-blue-800 hover:underline"
+                                        >
+                                            {responsesByTab.identity?.data?.statusInfo?.contract_address}
+                                        </a>
+                                    ) : (
+                                        <code className="text-xs bg-slate-50 px-2 py-1 rounded block truncate border border-slate-200 text-slate-700">
+                                            Not configured
+                                        </code>
+                                    )}
                                 </div>
                                 <div className="flex gap-2 text-xs">
                                     <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">Active</span>
@@ -592,10 +613,10 @@ export default function Home() {
                                                 </div>
                                             )}
                                             {/* TEE Balance */}
-                                            {activeResponse.data.tee_balance_eth !== undefined && (
+                                            {activeResponse.data.tee_balance_ETH !== undefined && (
                                                 <div className="bg-white border border-slate-200 rounded-xl p-3">
                                                     <p className="text-slate-500 mb-1">TEE Wallet Balance</p>
-                                                    <code className="text-slate-800">{activeResponse.data.tee_balance_eth.toFixed(6)} ETH</code>
+                                                    <code className="text-slate-800">{activeResponse.data.tee_balance_ETH.toFixed(6)} ETH</code>
                                                 </div>
                                             )}
                                             {/* Contract Address */}
@@ -616,7 +637,18 @@ export default function Home() {
                                             {activeResponse.data.anchor_tx && (
                                                 <div className="bg-white border border-slate-200 rounded-xl p-3 col-span-2">
                                                     <p className="text-slate-500 mb-1">Anchor Transaction</p>
-                                                    <code className="text-blue-700 break-all">{activeResponse.data.anchor_tx.transaction_hash || '—'}</code>
+                                                    {activeResponse.data.anchor_tx.transaction_hash ? (
+                                                        <a
+                                                            href={txLink(activeResponse.data.anchor_tx.transaction_hash)}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-blue-600 hover:text-blue-800 hover:underline break-all"
+                                                        >
+                                                            {activeResponse.data.anchor_tx.transaction_hash}
+                                                        </a>
+                                                    ) : (
+                                                        <code className="text-slate-500">—</code>
+                                                    )}
                                                     {activeResponse.data.broadcast !== undefined && (
                                                         <span className={`ml-2 ${activeResponse.data.anchor_tx.broadcasted ? 'text-emerald-600' : 'text-slate-500'}`}>
                                                             {activeResponse.data.anchor_tx.broadcasted ? '(broadcasted)' : '(not broadcasted)'}
@@ -731,7 +763,7 @@ export default function Home() {
                             <div className="space-y-6">
                                 <h2 className="text-xl font-semibold mb-4">On-Chain Event Monitor</h2>
                                 <p className="text-slate-600 text-sm leading-relaxed mb-6">
-                                    The enclave automatically monitors on-chain events. When an <code className="bg-slate-100 px-1 rounded">EthPriceUpdateRequested</code> event
+                                    The enclave automatically monitors on-chain events. When an <code className="bg-slate-100 px-1 rounded">ETHPriceUpdateRequested</code> event
                                     is detected, it fetches ETH/USD and submits an on-chain update automatically.
                                 </p>
 
@@ -750,10 +782,10 @@ export default function Home() {
                                             )}
                                             <span className="text-sm font-medium text-slate-700">
                                                 {eventMonitorLoading ? 'Loading...' :
-                                                 eventMonitorError ? 'Error' :
-                                                 eventMonitorData?.status === 'active' ? 'Monitoring Active' :
-                                                 eventMonitorData?.status === 'not_configured' ? 'Contract Not Configured' :
-                                                 'Initializing...'}
+                                                    eventMonitorError ? 'Error' :
+                                                        eventMonitorData?.status === 'active' ? 'Monitoring Active' :
+                                                            eventMonitorData?.status === 'not_configured' ? 'Contract Not Configured' :
+                                                                'Initializing...'}
                                             </span>
                                         </div>
                                         <div className="text-xs text-slate-500">
@@ -841,8 +873,8 @@ export default function Home() {
                                                     </span>
                                                     <span className={
                                                         log.message.includes('✓') ? 'text-emerald-400' :
-                                                        log.message.includes('✗') ? 'text-red-400' :
-                                                        'text-slate-300'
+                                                            log.message.includes('✗') ? 'text-red-400' :
+                                                                'text-slate-300'
                                                     }>
                                                         {log.message}
                                                     </span>

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 from web3 import Web3
+from web3.exceptions import ContractLogicError
 from eth_hash.auto import keccak
 
 from config import CHAIN_ID
@@ -92,7 +93,7 @@ def function_selector(signature: str) -> str:
 
 UPDATE_STATE_SELECTOR = function_selector("updateStateHash(bytes32)")
 STATE_HASH_SELECTOR = function_selector("stateHash()")
-UPDATE_ETH_PRICE_SELECTOR = function_selector("updateEthPrice(uint256,uint256,uint256)")
+UPDATE_ETH_PRICE_SELECTOR = function_selector("updateETHPrice(uint256,uint256,uint256)")
 
 def compute_state_hash(data: dict) -> str:
     """Compute keccak256 hash of state data for on-chain anchoring."""
@@ -111,7 +112,7 @@ def _rpc_call(rpc_url: str, method: str, params: list) -> Any:
 def rpc_call_with_failover(method: str, params: list) -> Any:
     return _rpc_call("", method, params)
 
-def sign_update_eth_price(
+def sign_update_ETH_price(
     *,
     odyn: Any,
     contract_address: str,
@@ -121,8 +122,8 @@ def sign_update_eth_price(
     updated_at: int,
     broadcast: bool = False,
 ) -> Dict[str, Any]:
-    """Build, sign and optionally broadcast updateEthPrice transaction."""
-    tee_address = odyn.eth_address()
+    tee_address = Web3.to_checksum_address(odyn.eth_address())
+    contract_address = Web3.to_checksum_address(contract_address)
     w3 = _chain.w3
     
     nonce = w3.eth.get_transaction_count(tee_address)
@@ -153,16 +154,14 @@ def sign_update_eth_price(
         "address": signed.get("address"),
     }
 
-    if broadcast:
-        try:
-            tx_hash = w3.eth.send_raw_transaction(result["raw_transaction"])
-            result["broadcasted"] = True
-            result["rpc_tx_hash"] = tx_hash.hex()
-        except Exception as e:
-            result["broadcasted"] = False
-            result["broadcast_error"] = str(e)
-
-    return result
+    return _broadcast_and_verify(
+        w3=w3,
+        signed=signed,
+        broadcast=broadcast,
+        tee_address=tee_address,
+        contract_address=contract_address,
+        data=data,
+    )
 
 def sign_update_state_hash(
     *,
@@ -173,7 +172,8 @@ def sign_update_state_hash(
     broadcast: bool = False,
 ) -> Dict[str, Any]:
     """Build, sign and optionally broadcast updateStateHash transaction."""
-    tee_address = odyn.eth_address()
+    tee_address = Web3.to_checksum_address(odyn.eth_address())
+    contract_address = Web3.to_checksum_address(contract_address)
     w3 = _chain.w3
     
     nonce = w3.eth.get_transaction_count(tee_address)
@@ -195,20 +195,68 @@ def sign_update_state_hash(
     }
 
     signed = odyn.sign_tx(tx)
+    return _broadcast_and_verify(
+        w3=w3,
+        signed=signed,
+        broadcast=broadcast,
+        tee_address=tee_address,
+        contract_address=contract_address,
+        data=data,
+    )
+
+def _broadcast_and_verify(
+    *,
+    w3: Web3,
+    signed: Dict[str, Any],
+    broadcast: bool,
+    tee_address: str,
+    contract_address: str,
+    data: str,
+) -> Dict[str, Any]:
+    """Helper to broadcast tx and verify execution status with detailed error reporting."""
     result = {
         "raw_transaction": signed.get("raw_transaction"),
         "transaction_hash": signed.get("transaction_hash"),
         "address": signed.get("address"),
+        "broadcasted": False
     }
 
-    if broadcast:
+    if not broadcast:
+        return result
+
+    try:
+        # Pre-flight simulation: catch revert errors before broadcasting
+        call_tx = {
+            "from": tee_address,
+            "to": contract_address,
+            "data": data,
+            "value": 0
+        }
         try:
-            tx_hash = w3.eth.send_raw_transaction(result["raw_transaction"])
-            result["broadcasted"] = True
-            result["rpc_tx_hash"] = tx_hash.hex()
-        except Exception as e:
+            w3.eth.call(call_tx, "latest")
+        except ContractLogicError as cle:
+            # ContractLogicError contains the revert reason
+            reason = str(cle)
             result["broadcasted"] = False
-            result["broadcast_error"] = str(e)
+            result["broadcast_error"] = f"Contract reverted: {reason}"
+            logger.error(f"Pre-flight simulation failed: {reason}")
+            return result
+        except Exception as sim_e:
+            # Other errors (network, etc.)
+            result["broadcasted"] = False
+            result["broadcast_error"] = f"Simulation error: {sim_e}"
+            logger.error(f"Pre-flight simulation failed: {sim_e}")
+            return result
+
+        # Simulation passed - safe to broadcast
+        tx_hash = w3.eth.send_raw_transaction(signed["raw_transaction"])
+        result["broadcasted"] = True
+        result["rpc_tx_hash"] = tx_hash.hex()
+        logger.info(f"Transaction broadcasted: {tx_hash.hex()}")
+    except Exception as e:
+        result["broadcasted"] = False
+        result["broadcast_error"] = str(e)
+        logger.error(f"Broadcast failed: {e}")
 
     return result
 
