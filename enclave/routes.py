@@ -30,7 +30,7 @@ Demo endpoints included:
 import json
 import logging
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, TYPE_CHECKING
 
 import requests
@@ -386,12 +386,10 @@ def save_to_storage(req: StorageRequest):
 
                 # Check TEE wallet balance
                 try:
-                    from chain import _rpc_call
-                    balance_hex = _rpc_call("", "eth_getBalance", [tee_address, "latest"])
-                    balance_wei = int(balance_hex, 16)
-                    balance_ETH = balance_wei / 1e18
-                    anchor_status["tee_balance_ETH"] = balance_ETH
-                    if balance_wei == 0:
+                    from chain import _chain
+                    balance_eth = _chain.get_balance_eth(tee_address)
+                    anchor_status["tee_balance_eth"] = balance_eth
+                    if balance_eth == 0:
                         anchor_status["anchor_error"] = f"TEE wallet {tee_address} has no funds. Please send some ETH to cover gas."
                         anchor_status["error_type"] = "tee_wallet_no_funds"
                         result.update(anchor_status)
@@ -715,7 +713,7 @@ def update_oracle_price_now():
             },
         )
 
-    updated_at = int(datetime.utcnow().timestamp())
+    updated_at = int(datetime.now(timezone.utc).timestamp())
 
     # Sign and optionally broadcast
     try:
@@ -1024,7 +1022,7 @@ def handle_pending_requests(lookback: int = 1000):
             },
         )
 
-    updated_at = int(datetime.utcnow().timestamp())
+    updated_at = int(datetime.now(timezone.utc).timestamp())
 
     results = []
     for req in pending:

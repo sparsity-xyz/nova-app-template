@@ -61,7 +61,13 @@ class Chain:
         raise TimeoutError(f"{'Helios' if is_enclave else 'Mock'} RPC failed to connect in time")
 
     def get_balance(self, address: str) -> int:
+        """Get balance in wei."""
         return self.w3.eth.get_balance(Web3.to_checksum_address(address))
+
+    def get_balance_eth(self, address: str) -> float:
+        """Get balance in ETH (convenience method)."""
+        balance_wei = self.get_balance(address)
+        return balance_wei / 1e18
 
     def get_nonce(self, address: str) -> int:
         return self.w3.eth.get_transaction_count(Web3.to_checksum_address(address))

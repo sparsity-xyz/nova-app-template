@@ -136,7 +136,7 @@ def update_eth_price_on_chain(*, request_id: int, reason: str) -> Dict[str, Any]
     oracle_state["last_updated_at"] = updated_at
     oracle_state["last_reason"] = reason
     oracle_state["last_tx"] = signed
-    oracle_state["last_run"] = datetime.utcnow().isoformat() + "Z"
+    oracle_state["last_run"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     return {
         "price_usd": price_usd,
@@ -200,7 +200,7 @@ def background_task():
     
     # --- Track task execution ---
     app_state["cron_counter"] = app_state.get("cron_counter", 0) + 1
-    app_state["last_cron_run"] = datetime.utcnow().isoformat() + "Z"
+    app_state["last_cron_run"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     
     logger.info(f"Cron job #{app_state['cron_counter']} at {app_state['last_cron_run']}")
     
@@ -259,7 +259,7 @@ def poll_contract_events():
     def add_log(msg: str):
         """Add a log entry to event monitor logs."""
         logs = monitor.setdefault("logs", [])
-        timestamp = datetime.utcnow().isoformat() + "Z"
+        timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         logs.append({"time": timestamp, "message": msg})
         # Keep only last 100 logs
         if len(logs) > 100:
@@ -382,7 +382,7 @@ def poll_contract_events():
             add_log(f"Processing request #{request_id}...")
             result = update_eth_price_on_chain(request_id=request_id, reason="onchain_event")
             handled[request_id_key] = {
-                "handled_at": datetime.utcnow().isoformat() + "Z",
+                "handled_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 "tx": result.get("tx"),
                 "price_usd": result.get("price_usd"),
                 "updated_at": result.get("updated_at"),

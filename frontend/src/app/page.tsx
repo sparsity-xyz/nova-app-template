@@ -128,8 +128,8 @@ export default function Home() {
         return () => clearInterval(interval);
     }, [activeTab, status.connected, client]);
 
-    const callApi = async (path: string, method: 'GET' | 'POST' = 'GET', body?: any, encrypted = false) => {
-        const tabAtCall = activeTab;
+    const callApi = async (path: string, method: 'GET' | 'POST' = 'GET', body?: any, encrypted = false, tabOverride?: string) => {
+        const tabAtCall = tabOverride || activeTab;
         setLoading(true);
         setResponsesByTab(prev => ({ ...prev, [tabAtCall]: null }));
         try {
@@ -386,7 +386,7 @@ export default function Home() {
                                             onClick={() => {
                                                 setShowAttestation(false);
                                                 setShowRATlsTrace(false);
-                                                callApi('/api/random', 'GET');
+                                                callApi('/api/random', 'GET', undefined, false, 'random');
                                             }}
                                             disabled={loading || !status.connected}
                                             className="text-sm text-emerald-600 hover:text-emerald-700 font-medium"
@@ -548,6 +548,33 @@ export default function Home() {
                                         </div>
                                     )}
                                 </div>
+
+                                {/* NSM Random Result */}
+                                {responsesByTab['random'] && (
+                                    <div className="mt-6 bg-gradient-to-br from-emerald-50 to-white border border-emerald-200 rounded-xl p-4">
+                                        <p className="text-xs font-semibold text-emerald-700 uppercase tracking-widest mb-2">
+                                            Hardware Entropy (NSM)
+                                        </p>
+                                        {responsesByTab['random'].success ? (
+                                            <div className="space-y-2">
+                                                <div>
+                                                    <span className="text-xs text-slate-500">Random Hex:</span>
+                                                    <code className="block text-xs font-mono bg-white px-2 py-1 rounded mt-1 break-all border border-emerald-100">
+                                                        {responsesByTab['random'].data?.random_hex}
+                                                    </code>
+                                                </div>
+                                                <div>
+                                                    <span className="text-xs text-slate-500">Random Int:</span>
+                                                    <code className="block text-xs font-mono bg-white px-2 py-1 rounded mt-1 break-all border border-emerald-100">
+                                                        {responsesByTab['random'].data?.random_int}
+                                                    </code>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="text-red-600 text-sm">{responsesByTab['random'].error}</p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
 
