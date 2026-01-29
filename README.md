@@ -59,11 +59,40 @@ Background workers handle time-gated or event-driven business logic.
 - **Event Listener**: `poll_contract_events()` watches for on-chain requests (e.g., `StateUpdateRequested`) to trigger TEE responses.
 - **Related Code**: [enclave/tasks.py](enclave/tasks.py)
 
-### 5) End-to-End Encryption (RA-TLS)
+### 5) End-to-End Encryption
 Secure communication directly between the user's browser and the TEE.
-- **RA-TLS Flow**: Frontend fetches the attestation, verifies PCRs, and establishes an encrypted channel.
-- **ECDH + AES-GCM**: Key exchange (X25519) and payload encryption happen transparently in the demo UI.
-- **Related Code**: [enclave/routes.py](enclave/routes.py), [frontend/src/lib/crypto.ts](frontend/src/lib/crypto.ts)
+
+The frontend supports two connection methods:
+
+#### Via Nova Registry (Recommended)
+Connect using an App ID from the Nova App Registry. This is the recommended approach because:
+- **On-chain Trust Anchor**: The registry stores verified `codeMeasurement`, `teePubkey`, and `appUrl` on-chain
+- **ZKP Verification**: Apps registered via ZKP have cryptographic proof of their attestation
+- **Public Key Pinning**: The frontend verifies the enclave's public key matches the registry value
+
+**How it works:**
+1. User enters the App ID in the frontend
+2. Frontend queries the Nova App Registry contract to fetch app info
+3. Frontend connects to `appUrl` and establishes ECDH key exchange
+4. Frontend verifies the enclave's public key matches `teePubkey` from registry
+5. All subsequent communication is encrypted with AES-GCM
+
+**Registry Contract (Base Sepolia):** `0x58e41D71606410E43BDA23C348B68F5A93245461`
+
+#### Direct RA-TLS
+Connect directly to an enclave URL without registry verification. Use this for:
+- Development and testing with unregistered enclaves
+- Self-hosted deployments where you manage your own trust
+
+**How it works:**
+1. User enters the enclave URL directly
+2. Frontend fetches attestation from `/.well-known/attestation`
+3. User should independently verify PCR values (PCR0, PCR1, PCR2)
+4. ECDH key exchange establishes encrypted channel
+
+> **Security Note**: When using Direct RA-TLS, you are responsible for verifying the PCR values against a trusted source. For production use, we recommend the Registry-based approach.
+
+- **Related Code**: [enclave/routes.py](enclave/routes.py), [frontend/src/lib/crypto.ts](frontend/src/lib/crypto.ts), [frontend/src/lib/registry.ts](frontend/src/lib/registry.ts)
 
 ### 6) Modern Developer Stack
 A complete foundation for rapid development.

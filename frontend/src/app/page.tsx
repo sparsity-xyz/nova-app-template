@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { EnclaveClient, type EncryptedCallTrace, type FetchedAttestation, type RATLSConnectTrace } from '@/lib/crypto';
+import { fetchAppFromRegistry, DEFAULT_REGISTRY_ADDRESS, DEFAULT_RPC_URL, type SparsityApp, formatPubkeyPreview, formatCodeMeasurement } from '@/lib/registry';
 
 interface ConnectionStatus {
     connected: boolean;
@@ -59,6 +60,16 @@ export default function Home() {
     const [eventMonitorLoading, setEventMonitorLoading] = useState(false);
     const [eventMonitorError, setEventMonitorError] = useState<string | null>(null);
 
+    // Connection mode state
+    const [connectionMode, setConnectionMode] = useState<'registry' | 'direct'>('registry');
+    const [appId, setAppId] = useState('');
+    const [registryAddress, setRegistryAddress] = useState(DEFAULT_REGISTRY_ADDRESS);
+    const [registryRpcUrl, setRegistryRpcUrl] = useState(DEFAULT_RPC_URL);
+    const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+    const [registryAppInfo, setRegistryAppInfo] = useState<SparsityApp | null>(null);
+    const [registryLoading, setRegistryLoading] = useState(false);
+    const [registryError, setRegistryError] = useState<string | null>(null);
+
     // Auto-detect enclave URL from current location
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -69,24 +80,93 @@ export default function Home() {
         }
     }, []);
 
+    // Fetch app info from registry
+    const handleFetchFromRegistry = async () => {
+        if (!appId) return;
+        setRegistryLoading(true);
+        setRegistryError(null);
+        setRegistryAppInfo(null);
+        try {
+            const app = await fetchAppFromRegistry(appId, registryAddress, registryRpcUrl);
+            if (!app) {
+                setRegistryError(`App ID ${appId} not found in registry`);
+                return;
+            }
+            setRegistryAppInfo(app);
+            // Auto-fill the enclave URL
+            setStatus(prev => ({ ...prev, enclaveUrl: app.appUrl }));
+        } catch (error) {
+            setRegistryError(error instanceof Error ? error.message : 'Failed to fetch from registry');
+        } finally {
+            setRegistryLoading(false);
+        }
+    };
+
     const handleConnect = async () => {
-        if (!status.enclaveUrl) return;
+        let targetUrl = status.enclaveUrl;
+        let trustedPubkey: string | undefined;
+        let trustedCodeMeasurement: string | undefined;
+        let appInfo = registryAppInfo;
+
+        // If using registry mode, fetch app info first if not already fetched
+        if (connectionMode === 'registry') {
+            if (!appInfo && appId) {
+                // Fetch from registry inline
+                setRegistryLoading(true);
+                setRegistryError(null);
+                try {
+                    const app = await fetchAppFromRegistry(appId, registryAddress, registryRpcUrl);
+                    if (!app) {
+                        setRegistryError(`App ID ${appId} not found in registry`);
+                        setRegistryLoading(false);
+                        return;
+                    }
+                    setRegistryAppInfo(app);
+                    appInfo = app;
+                } catch (error) {
+                    setRegistryError(error instanceof Error ? error.message : 'Failed to fetch from registry');
+                    setRegistryLoading(false);
+                    return;
+                }
+                setRegistryLoading(false);
+            }
+            if (appInfo) {
+                targetUrl = appInfo.appUrl;
+                trustedPubkey = appInfo.teePubkey;
+                trustedCodeMeasurement = appInfo.codeMeasurement;
+            }
+        }
+
+        if (!targetUrl) return;
         setLoading(true);
         try {
             setRATlsTrace(null);
             setShowRATlsTrace(false);
-            const { attestation, trace } = await client.connectWithTrace(status.enclaveUrl);
+            const { attestation, trace } = await client.connectWithTrace(
+                targetUrl,
+                trustedPubkey,
+                trustedCodeMeasurement
+            );
             setRATlsTrace(trace);
             const statusInfo = await client.call('/status');
             setStatus({
                 ...status,
+                enclaveUrl: targetUrl,
                 connected: true,
                 teeAddress: statusInfo.ETH_address,
                 error: undefined,
             });
             setResponsesByTab(prev => ({
                 ...prev,
-                identity: { success: true, data: { attestation, statusInfo }, type: 'Connection' },
+                identity: {
+                    success: true,
+                    data: {
+                        attestation,
+                        statusInfo,
+                        registryVerified: connectionMode === 'registry' && !!registryAppInfo
+                    },
+                    type: 'Connection'
+                },
             }));
         } catch (error) {
             setStatus({
@@ -255,36 +335,188 @@ export default function Home() {
                             <h1 className="text-3xl font-semibold text-slate-900 mt-2">
                                 🛡️ Nova App Template
                             </h1>
-                            <p className="text-slate-500 mt-2">Secure, verifiable TEE apps with RA‑TLS, S3, and on‑chain trust.</p>
+                            <p className="text-slate-500 mt-2">Secure, verifiable TEE apps with TLS, S3, and on‑chain trust.</p>
                         </div>
 
-                        <div className="min-w-[320px] flex-1 max-w-md">
-                            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                                <div className="flex-1">
-                                    <label className="text-[10px] uppercase tracking-widest text-slate-400">Enclave URL</label>
-                                    <input
-                                        className="mt-1 w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-                                        value={status.enclaveUrl}
-                                        onChange={(e) => setStatus({ ...status, enclaveUrl: e.target.value })}
-                                        placeholder="https://your-app.sparsity.cloud"
-                                    />
-                                </div>
+                        <div className="min-w-[400px] flex-1 max-w-xl">
+                            {/* Connection Mode Toggle Tabs */}
+                            <div className="flex gap-1 p-1 bg-slate-100 rounded-xl mb-3">
                                 <button
-                                    onClick={handleConnect}
-                                    disabled={loading || status.connected}
-                                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${status.connected
-                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                        : 'bg-blue-600 hover:bg-blue-500 text-white shadow-sm'
+                                    onClick={() => setConnectionMode('registry')}
+                                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${connectionMode === 'registry'
+                                        ? 'bg-white text-slate-900 shadow-sm'
+                                        : 'text-slate-600 hover:text-slate-900'
                                         }`}
                                 >
-                                    {loading ? 'Connecting...' : status.connected ? 'Connected' : 'Connect'}
+                                    Via Registry
+                                </button>
+                                <button
+                                    onClick={() => setConnectionMode('direct')}
+                                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${connectionMode === 'direct'
+                                        ? 'bg-white text-slate-900 shadow-sm'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                >
+                                    Direct URL
                                 </button>
                             </div>
+
+                            {connectionMode === 'registry' ? (
+                                <div className="space-y-3">
+                                    {/* Registry mode: App ID + Input + Connect in one row */}
+                                    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                                        <span className="text-[10px] uppercase tracking-widest text-slate-400 shrink-0">App ID</span>
+                                        <input
+                                            className="flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                                            value={appId}
+                                            onChange={(e) => {
+                                                // Only allow numeric input
+                                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                                setAppId(val);
+                                                setRegistryAppInfo(null);
+                                                setRegistryError(null);
+                                            }}
+                                            placeholder="Enter App ID (e.g., 1)"
+                                        />
+                                        <button
+                                            onClick={handleConnect}
+                                            disabled={loading || registryLoading || status.connected || !appId}
+                                            className={`min-w-[120px] px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shrink-0 whitespace-nowrap ${status.connected
+                                                ? 'bg-emerald-100 text-emerald-700 border border-emerald-300 shadow-sm'
+                                                : 'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white shadow-md shadow-blue-200/50 disabled:opacity-50 disabled:shadow-none'
+                                                }`}
+                                        >
+                                            {registryLoading ? 'Fetching...' : loading ? 'Connecting...' : status.connected ? '✓ Connected' : 'Connect'}
+                                        </button>
+                                    </div>
+
+                                    {/* Advanced Settings Toggle */}
+                                    <button
+                                        onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                                        className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1"
+                                    >
+                                        <span>{showAdvancedSettings ? '▼' : '▶'}</span>
+                                        Advanced Settings
+                                    </button>
+
+                                    {showAdvancedSettings && (
+                                        <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                            <div>
+                                                <label className="text-[10px] uppercase tracking-widest text-slate-400">Registry Address</label>
+                                                <input
+                                                    className="mt-1 w-full bg-white text-xs text-slate-700 outline-none px-2 py-1.5 rounded border border-slate-200"
+                                                    value={registryAddress}
+                                                    onChange={(e) => setRegistryAddress(e.target.value)}
+                                                    placeholder={DEFAULT_REGISTRY_ADDRESS}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] uppercase tracking-widest text-slate-400">RPC URL</label>
+                                                <input
+                                                    className="mt-1 w-full bg-white text-xs text-slate-700 outline-none px-2 py-1.5 rounded border border-slate-200"
+                                                    value={registryRpcUrl}
+                                                    onChange={(e) => setRegistryRpcUrl(e.target.value)}
+                                                    placeholder={DEFAULT_RPC_URL}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Registry Error */}
+                                    {registryError && (
+                                        <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg border border-red-200">
+                                            {registryError}
+                                        </div>
+                                    )}
+
+                                    {/* Fetched App Info */}
+                                    {registryAppInfo && (
+                                        <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-emerald-600">✓</span>
+                                                <span className="text-xs font-semibold text-emerald-700">App Found</span>
+                                                {registryAppInfo.zkVerified && (
+                                                    <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">ZK Verified</span>
+                                                )}
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 text-xs">
+                                                <div>
+                                                    <span className="text-slate-500">URL:</span>
+                                                    <span className="ml-1 text-slate-700 break-all">{registryAppInfo.appUrl}</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-slate-500">Public Key:</span>
+                                                    <code className="ml-1 text-slate-700 bg-white px-1 rounded">{formatPubkeyPreview(registryAppInfo.teePubkey)}</code>
+                                                </div>
+                                                <div className="col-span-2">
+                                                    <span className="text-slate-500">Code Measurement:</span>
+                                                    <code className="ml-1 text-slate-700 bg-white px-1 rounded">{formatCodeMeasurement(registryAppInfo.codeMeasurement)}</code>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {/* Direct URL mode: Enclave URL + Input + Connect in one row */}
+                                    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                                        <span className="text-[10px] uppercase tracking-widest text-slate-400 shrink-0">Enclave URL</span>
+                                        <input
+                                            className="flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                                            value={status.enclaveUrl}
+                                            onChange={(e) => setStatus({ ...status, enclaveUrl: e.target.value })}
+                                            placeholder="https://your-app.sparsity.cloud"
+                                        />
+                                        <button
+                                            onClick={handleConnect}
+                                            disabled={loading || status.connected || !status.enclaveUrl}
+                                            className={`min-w-[120px] px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shrink-0 whitespace-nowrap ${status.connected
+                                                ? 'bg-emerald-100 text-emerald-700 border border-emerald-300 shadow-sm'
+                                                : 'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white shadow-md shadow-blue-200/50 disabled:opacity-50 disabled:shadow-none'
+                                                }`}
+                                        >
+                                            {loading ? 'Connecting...' : status.connected ? '✓ Connected' : 'Connect'}
+                                        </button>
+                                    </div>
+
+                                    {/* Connected Info for Direct URL mode */}
+                                    {status.connected && connectionMode === 'direct' && (
+                                        <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-emerald-600">✓</span>
+                                                <span className="text-xs font-semibold text-emerald-700">Connected to Enclave</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 text-xs">
+                                                <div>
+                                                    <span className="text-slate-500">URL:</span>
+                                                    <span className="ml-1 text-slate-700 break-all">{status.enclaveUrl}</span>
+                                                </div>
+                                                {status.teeAddress && (
+                                                    <div>
+                                                        <span className="text-slate-500">TEE Address:</span>
+                                                        <code className="ml-1 text-slate-700 bg-white px-1 rounded">
+                                                            {status.teeAddress.slice(0, 10)}...{status.teeAddress.slice(-8)}
+                                                        </code>
+                                                    </div>
+                                                )}
+                                                {client.serverEncryptionPublicKey && (
+                                                    <div className="col-span-2">
+                                                        <span className="text-slate-500">Public Key:</span>
+                                                        <code className="ml-1 text-slate-700 bg-white px-1 rounded">
+                                                            {client.serverEncryptionPublicKey.slice(0, 16)}...{client.serverEncryptionPublicKey.slice(-16)}
+                                                        </code>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
 
                     <div className="flex flex-wrap gap-3 text-xs text-slate-500">
-                        <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">RA‑TLS</span>
+                        <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">TLS</span>
                         <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">S3 Storage</span>
                         <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">Oracles</span>
                         <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">Event Listener</span>
@@ -299,7 +531,7 @@ export default function Home() {
                         <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em] mb-4">Capabilities</h2>
                         <nav className="flex flex-col gap-2">
                             {[
-                                { id: 'identity', label: 'Identity & RA-TLS', icon: '🔑' },
+                                { id: 'identity', label: 'Identity & TLS', icon: '🔑' },
                                 { id: 'secure-echo', label: 'Secure Echo', icon: '🔒' },
                                 { id: 'storage', label: 'S3 Storage', icon: '📦' },
                                 { id: 'oracle', label: 'Oracle Demo', icon: '🌐' },
@@ -366,7 +598,7 @@ export default function Home() {
                     <div className="bg-white rounded-2xl border border-slate-200 p-8 min-h-[400px] shadow-lg shadow-slate-200/60">
                         {activeTab === 'identity' && (
                             <div className="space-y-6">
-                                <h2 className="text-xl font-semibold mb-4">Identity & RA-TLS</h2>
+                                <h2 className="text-xl font-semibold mb-4">Identity & TLS</h2>
                                 <p className="text-slate-600 text-sm leading-relaxed mb-6">
                                     Establish a secure, hardware-verifiable channel with the enclave using AWS Nitro Attestation
                                     and ECDH key exchange.
@@ -386,7 +618,7 @@ export default function Home() {
                                             disabled={loading || !status.connected || !ratlsTrace}
                                             className="text-sm text-slate-600 hover:text-slate-800 font-medium disabled:opacity-50"
                                         >
-                                            {showRATlsTrace ? 'Hide RA‑TLS Trace →' : 'Show RA‑TLS Trace →'}
+                                            {showRATlsTrace ? 'Hide TLS Trace →' : 'Show TLS Trace →'}
                                         </button>
                                         <button
                                             onClick={() => {
@@ -406,7 +638,7 @@ export default function Home() {
                                     <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
                                         <div className="flex items-center justify-between gap-4">
                                             <div>
-                                                <p className="text-xs uppercase tracking-widest text-slate-500">RA-TLS Establishment Trace</p>
+                                                <p className="text-xs uppercase tracking-widest text-slate-500">TLS Establishment Trace</p>
                                                 <p className="text-sm text-slate-700 break-all mt-1">{ratlsTrace.baseUrl}</p>
                                             </div>
                                             <button
