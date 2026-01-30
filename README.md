@@ -1,6 +1,6 @@
 # Nova App Template
 
-This repository provides a template for building and deploying verifiable TEE applications on the [NovaStack](https://github.com/sparsity-xyz/nova-stack) (or [Nova platform](https://sparsity.cloud/), if you prefer a managed infrastructure). Its primary goal is to demonstrate NovaStack's core features and provide developers with a ready-to-use foundation.
+This repository provides a template for building and deploying verifiable TEE applications on the [Nova Stack](https://github.com/sparsity-xyz/nova-stack) (or [Nova platform](https://sparsity.cloud/), if you prefer a managed infrastructure). Its primary goal is to demonstrate NovaStack's core features and provide developers with a ready-to-use foundation.
 
 The template covers:
 
