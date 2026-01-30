@@ -147,7 +147,7 @@ class Odyn:
         """
         url = f"{self.endpoint}/v1/attestation"
         payload: Dict[str, Any] = {"nonce": nonce or ""}
-        # Include enclave encryption public key (PEM) for RA-TLS binding
+        # Include enclave encryption public key (PEM) for Attestation binding
         try:
             enc_pub = self.get_encryption_public_key()
             if "public_key_pem" in enc_pub:

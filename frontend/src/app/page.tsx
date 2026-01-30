@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { EnclaveClient, type EncryptedCallTrace, type FetchedAttestation, type RATLSConnectTrace } from '@/lib/crypto';
+import { EnclaveClient, type EncryptedCallTrace, type FetchedAttestation, type TLSConnectTrace } from '@/lib/crypto';
 import { fetchAppFromRegistry, DEFAULT_REGISTRY_ADDRESS, DEFAULT_RPC_URL, type SparsityApp, formatPubkeyPreview, formatCodeMeasurement } from '@/lib/registry';
 
 interface ConnectionStatus {
@@ -39,8 +39,8 @@ export default function Home() {
         ? (responsesByTab[lastResponseKey] || null)
         : (responsesByTab[activeTab] || null);
 
-    const [ratlsTrace, setRATlsTrace] = useState<RATLSConnectTrace | null>(null);
-    const [showRATlsTrace, setShowRATlsTrace] = useState(false);
+    const [tlsTrace, setTlsTrace] = useState<TLSConnectTrace | null>(null);
+    const [showTlsTrace, setShowTlsTrace] = useState(false);
 
     const [showAttestation, setShowAttestation] = useState(false);
     const [attestationLoading, setAttestationLoading] = useState(false);
@@ -140,14 +140,14 @@ export default function Home() {
         if (!targetUrl) return;
         setLoading(true);
         try {
-            setRATlsTrace(null);
-            setShowRATlsTrace(false);
+            setTlsTrace(null);
+            setShowTlsTrace(false);
             const { attestation, trace } = await client.connectWithTrace(
                 targetUrl,
                 trustedPubkey,
                 trustedCodeMeasurement
             );
-            setRATlsTrace(trace);
+            setTlsTrace(trace);
             const statusInfo = await client.call('/status');
             setStatus({
                 ...status,
@@ -614,16 +614,16 @@ export default function Home() {
                                             Fetch Attestation →
                                         </button>
                                         <button
-                                            onClick={() => setShowRATlsTrace((v) => !v)}
-                                            disabled={loading || !status.connected || !ratlsTrace}
+                                            onClick={() => setShowTlsTrace((v) => !v)}
+                                            disabled={loading || !status.connected || !tlsTrace}
                                             className="text-sm text-slate-600 hover:text-slate-800 font-medium disabled:opacity-50"
                                         >
-                                            {showRATlsTrace ? 'Hide TLS Trace →' : 'Show TLS Trace →'}
+                                            {showTlsTrace ? 'Hide TLS Trace →' : 'Show TLS Trace →'}
                                         </button>
                                         <button
                                             onClick={() => {
                                                 setShowAttestation(false);
-                                                setShowRATlsTrace(false);
+                                                setShowTlsTrace(false);
                                                 callApi('/api/random', 'GET', undefined, false, 'random');
                                             }}
                                             disabled={loading || !status.connected}
@@ -634,15 +634,15 @@ export default function Home() {
                                     </div>
                                 </div>
 
-                                {ratlsTrace && showRATlsTrace && (
+                                {tlsTrace && showTlsTrace && (
                                     <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
                                         <div className="flex items-center justify-between gap-4">
                                             <div>
                                                 <p className="text-xs uppercase tracking-widest text-slate-500">TLS Establishment Trace</p>
-                                                <p className="text-sm text-slate-700 break-all mt-1">{ratlsTrace.baseUrl}</p>
+                                                <p className="text-sm text-slate-700 break-all mt-1">{tlsTrace.baseUrl}</p>
                                             </div>
                                             <button
-                                                onClick={() => copyToClipboard(JSON.stringify(ratlsTrace, null, 2))}
+                                                onClick={() => copyToClipboard(JSON.stringify(tlsTrace, null, 2))}
                                                 className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
                                             >
                                                 Copy Trace JSON
@@ -653,18 +653,18 @@ export default function Home() {
                                             <div className="bg-white border border-slate-200 rounded-xl p-4">
                                                 <p className="text-xs uppercase tracking-widest text-slate-500 mb-2">Key Material (metadata)</p>
                                                 <div className="text-xs text-slate-700 space-y-1">
-                                                    <div><span className="text-slate-500">Curve:</span> {ratlsTrace.encryptionPublicKey?.curve || '—'}</div>
-                                                    <div className="break-all"><span className="text-slate-500">Server encryption public key:</span> {ratlsTrace.encryptionPublicKey?.public_key_der || '—'}</div>
-                                                    <div><span className="text-slate-500">Client pubkey DER length:</span> {ratlsTrace.client?.client_public_key_der_len ?? '—'}</div>
+                                                    <div><span className="text-slate-500">Curve:</span> {tlsTrace.encryptionPublicKey?.curve || '—'}</div>
+                                                    <div className="break-all"><span className="text-slate-500">Server encryption public key:</span> {tlsTrace.encryptionPublicKey?.public_key_der || '—'}</div>
+                                                    <div><span className="text-slate-500">Client pubkey DER length:</span> {tlsTrace.client?.client_public_key_der_len ?? '—'}</div>
                                                 </div>
                                             </div>
 
                                             <div className="bg-white border border-slate-200 rounded-xl p-4">
                                                 <p className="text-xs uppercase tracking-widest text-slate-500 mb-2">Attestation (summary)</p>
                                                 <div className="text-xs text-slate-700 space-y-1">
-                                                    <div className="break-all"><span className="text-slate-500">Module ID:</span> {ratlsTrace.attestation?.decoded?.module_id || '—'}</div>
-                                                    <div><span className="text-slate-500">Timestamp:</span> {ratlsTrace.attestation?.decoded?.timestamp ? new Date(ratlsTrace.attestation.decoded.timestamp * 1000).toISOString() : '—'}</div>
-                                                    <div><span className="text-slate-500">PCR count:</span> {ratlsTrace.attestation?.decoded?.pcr_count ?? '—'}</div>
+                                                    <div className="break-all"><span className="text-slate-500">Module ID:</span> {tlsTrace.attestation?.decoded?.module_id || '—'}</div>
+                                                    <div><span className="text-slate-500">Timestamp:</span> {tlsTrace.attestation?.decoded?.timestamp ? new Date(tlsTrace.attestation.decoded.timestamp * 1000).toISOString() : '—'}</div>
+                                                    <div><span className="text-slate-500">PCR count:</span> {tlsTrace.attestation?.decoded?.pcr_count ?? '—'}</div>
                                                 </div>
                                             </div>
                                         </div>
@@ -672,7 +672,7 @@ export default function Home() {
                                         <div className="mt-4 bg-white border border-slate-200 rounded-xl p-4">
                                             <p className="text-xs uppercase tracking-widest text-slate-500 mb-3">Steps</p>
                                             <div className="space-y-2">
-                                                {ratlsTrace.steps.map((s, idx) => (
+                                                {tlsTrace.steps.map((s, idx) => (
                                                     <div key={idx} className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2 ${s.ok ? 'border-emerald-200 bg-emerald-50/50' : 'border-red-200 bg-red-50/50'}`}>
                                                         <div>
                                                             <div className="text-xs font-semibold text-slate-800">{s.name}</div>

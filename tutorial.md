@@ -1,6 +1,6 @@
 # Tutorial: Building & Deploying on Nova
 
-This tutorial guides you through developing a production-ready, verifiable TEE application on the [Sparsity Nova Platform](https://sparsity.cloud). You will learn to use the Nova App Template to implement secure storage, internet-to-chain oracles, and RA-TLS encrypted communication.
+This tutorial guides you through developing a production-ready, verifiable TEE application on the [Sparsity Nova Platform](https://sparsity.cloud). You will learn to use the Nova App Template to implement secure storage, internet-to-chain oracles, and TLS encrypted communication.
 
 ---
 
@@ -24,14 +24,14 @@ The Nova ecosystem consists of several components working together to ensure ver
 | Role | Description |
 |------|-------------|
 | **Enclave (TEE)** | A secure container running in AWS Nitro Enclaves. It holds private keys and handles sensitive logic. |
-| **Frontend (Browser)** | A React app that verifies the Enclave's identity and establishes an encrypted channel (RA-TLS). |
+| **Frontend (Browser)** | A React app that verifies the Enclave's identity and establishes an encrypted channel (TLS). |
 | **App Contract** | Serves as the immutable "Anchor" on-chain. It stores the TEE's state hashes and verified identity. |
 | **S3 Storage** | Encrypted persistent storage provided by Nova, isolated to your specific app instance. |
 | **Nova Registry** | A centralized registry that manages TEE identity registrations and verifies hardware measurements. |
 | **Nova ZKP Registry** | Generates and stores Zero-Knowledge Proofs for TEE attestation, allowing for ultra-fast on-chain verification. |
 
 ### 1.2 Data Flow
-The following diagram illustrates how your application interacts with the user, the platform, and the blockchain. Note the distinction between the one-time **Registration Phase** and the per-request **RA-TLS Phase**.
+The following diagram illustrates how your application interacts with the user, the platform, and the blockchain. Note the distinction between the one-time **Registration Phase** and the per-request **TLS Phase**.
 
 ```mermaid
 sequenceDiagram
@@ -52,7 +52,7 @@ sequenceDiagram
     end
 
     rect rgb(240, 240, 240)
-        Note over U,E: Phase 2: Identity & RA-TLS (Local Verification)
+        Note over U,E: Phase 2: Identity & TLS (Local Verification)
         U->>E: 1. Fetch Attestation (/.well-known/attestation)
         E-->>U: 2. CBOR Document + Public Key
         U->>U: 3. Local Decode & PCR Verification (lib/attestation.ts)
@@ -181,7 +181,7 @@ In Mock Mode, your TEE wallet is generated locally. Since you aren't running on 
 
 ### 5.4 Test Frontend
 1.  Open [http://localhost:3000/frontend](http://localhost:3000/frontend).
-2.  Click **Connect** to establish an RA-TLS session with your local mock backend.
+2.  Click **Connect** to establish a TLS session with your local mock backend.
 3.  Try the **S3 Storage** or **Oracle Update** features.
 
 ---
@@ -218,7 +218,7 @@ docker run -p 8000:8000 -e IN_ENCLAVE=false nova-app-template:latest
 
 Once the status is **Running**:
 
-1. **RA-TLS Handshake**: Use the "Encrypted Echo" feature in the UI. If it receives a reply, the RA-TLS handshake succeeded.
+1. **TLS Handshake**: Use the "Encrypted Echo" feature in the UI. If it receives a reply, the TLS handshake succeeded.
 2. **Identity**: Copy the TEE address from the UI and verify it matches the `teeWallet` stored in your smart contract.
 3. **State Anchoring**: Change a value in S3 storage and check if your contract's `stateHash` updates on Etherscan.
 4. **Trustless RPC**: Check the `enclave` logs in Nova Console to see Helios syncing blocks from Base Sepolia.

@@ -148,7 +148,7 @@ def get_attestation(nonce: str = ""):
 @public_router.post("/.well-known/attestation")
 def well_known_attestation(body: Dict[str, Any] = Body(default_factory=dict)):
     """
-    Public RA-TLS endpoint for frontend attestation fetch.
+    Public Attestation endpoint for frontend attestation fetch.
 
     Returns raw CBOR attestation document.
     """

@@ -8,7 +8,7 @@ The template covers:
 2. **Isolated S3 Storage**: Encrypted key-value storage with on-chain state hash anchoring for verifiable persistence.
 3. **Trustless RPC (Helios)**: Built-in support for the Helios light client, enabling verifiable blockchain interactions.
 4. **Automated Oracle & Event Tasks**: Periodic background tasks for fetching external data and responding to on-chain events.
-5. **End-to-End Encryption**: Public RA-TLS attestation endpoints and ECDH-based encrypted communication channels.
+5. **End-to-End Encryption**: Public Attestation endpoints and ECDH-based encrypted communication channels.
 6. **Modern Developer Stack**: A complete Next.js frontend and a local mockup environment (`odyn.py`) for seamless development.
 
 ---
@@ -64,7 +64,7 @@ Secure communication directly between the user's browser and the TEE.
 
 The frontend supports two connection methods:
 
-#### Via Nova Registry (Recommended)
+#### 5.1 Via Nova Registry (Recommended)
 Connect using an App ID from the Nova App Registry. This is the recommended approach because:
 - **On-chain Trust Anchor**: The registry stores verified `codeMeasurement`, `teePubkey`, and `appUrl` on-chain
 - **ZKP Verification**: Apps registered via ZKP have cryptographic proof of their attestation
@@ -79,7 +79,7 @@ Connect using an App ID from the Nova App Registry. This is the recommended appr
 
 **Registry Contract (Base Sepolia):** `0x58e41D71606410E43BDA23C348B68F5A93245461`
 
-#### Direct RA-TLS
+#### 5.2 Direct URL
 Connect directly to an enclave URL without registry verification. Use this for:
 - Development and testing with unregistered enclaves
 - Self-hosted deployments where you manage your own trust
@@ -90,7 +90,7 @@ Connect directly to an enclave URL without registry verification. Use this for:
 3. User should independently verify PCR values (PCR0, PCR1, PCR2)
 4. ECDH key exchange establishes encrypted channel
 
-> **Security Note**: When using Direct RA-TLS, you are responsible for verifying the PCR values against a trusted source. For production use, we recommend the Registry-based approach.
+> **Security Note**: When using Direct URL, you are responsible for verifying the PCR values against a trusted source. For production use, we recommend the Registry-based approach.
 
 - **Related Code**: [enclave/routes.py](enclave/routes.py), [frontend/src/lib/crypto.ts](frontend/src/lib/crypto.ts), [frontend/src/lib/registry.ts](frontend/src/lib/registry.ts)
 
@@ -135,7 +135,7 @@ docker run -p 8000:8000 -e IN_ENCLAVE=false nova-app-template:latest
 1. Create an App in the Nova Console
 2. Set App Listening Port = 8000
 3. Configure the contract address (NovaAppBase/ETHPriceOracleApp or your custom contract)
-4. The platform injects S3 / Egress / RA-TLS configuration at runtime
+4. The platform injects S3 / Egress / TLS configuration at runtime
 
 For this template, the app contract address is configured in [enclave/config.py](enclave/config.py).
 
@@ -159,7 +159,7 @@ Note: Per template configuration, on-chain settings are read from [enclave/confi
 ### Identity & Encryption (Pillar 1 & 5)
 | Endpoint | Method | Description |
 |----------|--------|------|
-| `/.well-known/attestation` | POST | Public RA-TLS attestation (raw CBOR) |
+| `/.well-known/attestation` | POST | Public Attestation (raw CBOR) |
 | `/api/attestation` | GET | Base64-encoded attestation document |
 | `/api/echo` | POST | Supports both encrypted and plain payloads |
 | `/api/encryption/public-key` | GET | Enclave's P-384 public key |
@@ -219,7 +219,7 @@ This template also includes `ETHPriceOracleApp`, which adds an on-chain ETH/USD 
 
 ## FAQ
 
-**Q: How is RA-TLS verified?**
+**Q: How is the enclave connection verified?**
 A: The frontend parses the attestation document and verifies PCRs/public key.
 
 **Q: How are transaction nonces fetched?**

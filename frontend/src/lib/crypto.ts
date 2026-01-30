@@ -1,5 +1,5 @@
 /**
- * RA-TLS Crypto Client
+ * TLS Crypto Client
  * 
  * Provides ECDH + AES-GCM encrypted communication with Nova TEE enclave.
  * Supports both P-384 (Odyn standard) and secp256k1 curves.
@@ -41,7 +41,7 @@ export type EncryptedCallResult<T = any> = {
     trace: EncryptedCallTrace;
 };
 
-export interface RATLSConnectTrace {
+export interface TLSConnectTrace {
     baseUrl: string;
     steps: Array<{
         name: string;
@@ -145,7 +145,7 @@ function rawToDer(rawKey: Uint8Array, curve: CurveType): Uint8Array {
 }
 
 /**
- * EnclaveClient - RA-TLS client for secure communication with Nova TEE
+ * EnclaveClient - TLS client for secure communication with Nova TEE
  * 
  * Usage:
  *   const client = new EnclaveClient();
@@ -202,7 +202,7 @@ export class EnclaveClient {
 
         const attestation = await this.fetchAttestation();
 
-        // RA-TLS: the enclave encryption public key is embedded in the attestation document.
+        // TLS: the enclave encryption public key is embedded in the attestation document.
         // Use it directly to avoid an extra network call.
         const encryptionPublicKey = ((attestation as any).public_key || '').replace(/^0x/, '');
         if (!encryptionPublicKey) {
@@ -260,7 +260,7 @@ export class EnclaveClient {
     }
 
     /**
-     * Connect to enclave and return a detailed trace of the RA-TLS establishment process.
+     * Connect to enclave and return a detailed trace of the TLS establishment process.
      * This is intended for UI/debugging.
      * 
      * When trustedPubkey and/or trustedCodeMeasurement are provided (from Nova Registry),
@@ -270,8 +270,8 @@ export class EnclaveClient {
         baseUrl: string,
         trustedPubkey?: string,
         trustedCodeMeasurement?: string
-    ): Promise<{ attestation: AttestationDoc; trace: RATLSConnectTrace }> {
-        const trace: RATLSConnectTrace = { baseUrl, steps: [] };
+    ): Promise<{ attestation: AttestationDoc; trace: TLSConnectTrace }> {
+        const trace: TLSConnectTrace = { baseUrl, steps: [] };
 
         const step = async <T>(name: string, fn: () => Promise<T>, detail?: any): Promise<T> => {
             const startedAt = Date.now();
