@@ -16,18 +16,18 @@ The template covers:
 ## Structure
 
 ```
-|-- enclave/               # FastAPI (TEE Backend)
+|-- enclave/               # Application backend in TEE (FastAPI)
 |   |-- app.py             # App entry
-|   |-- routes.py          # API routes (business logic)
+|   |-- routes.py          # API routes for business logic
 |   |-- tasks.py           # Scheduler tasks & event polling
-|   |-- odyn.py            # Odyn SDK (latest internal API)
+|   |-- odyn.py            # Odyn SDK (internal API)
 |   |-- chain.py           # On-chain helpers & Web3 integration
 |   |-- requirements.txt   # Backend dependencies
-|   |-- frontend/          # Built frontend assets (for bundling)
+|   |-- frontend/          # Built frontend assets for bundling
 |-- contracts/             # Solidity contracts
-|-- frontend/              # Next.js frontend source
+|-- frontend/              # Next.js frontend 
 |-- enclaver.yaml          # Enclaver build configuration
-|-- Dockerfile             # Multi-stage TEE build (Next.js + Python)
+|-- Dockerfile             # Multi-stage TEE build for backend and frontend
 |-- Makefile               # Dev & Build commands
 ```
 
