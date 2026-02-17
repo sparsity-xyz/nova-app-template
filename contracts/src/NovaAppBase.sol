@@ -14,6 +14,9 @@ contract NovaAppBase is ISparsityApp {
     /// @notice The TEE wallet address (from Odyn /v1/eth/address)
     address public teeWalletAddress;
 
+    /// @notice Optional app-level wallet for stable cross-instance identity.
+    address public appWalletAddress;
+
     /// @notice Nova Registry contract authorized to register the TEE wallet
     address public novaRegistry;
 
@@ -25,6 +28,9 @@ contract NovaAppBase is ISparsityApp {
 
     /// @notice Emitted when Nova Registry is set
     event NovaRegistrySet(address indexed registry);
+
+    /// @notice Emitted when app wallet is set or updated
+    event AppWalletAddressSet(address indexed wallet);
 
     /// @notice Emitted when ownership is transferred
     event OwnershipTransferred(
@@ -47,6 +53,11 @@ contract NovaAppBase is ISparsityApp {
         _;
     }
 
+    modifier onlyTEEOrAppWallet() {
+        _checkTEEOrAppWallet();
+        _;
+    }
+
     function _checkOwner() internal view {
         require(msg.sender == owner, "NovaAppBase: caller is not the owner");
     }
@@ -56,6 +67,12 @@ contract NovaAppBase is ISparsityApp {
             msg.sender == teeWalletAddress,
             "NovaAppBase: caller is not the TEE"
         );
+    }
+
+    function _checkTEEOrAppWallet() internal view {
+        bool isTee = (msg.sender == teeWalletAddress);
+        bool isAppWallet = (appWalletAddress != address(0) && msg.sender == appWalletAddress);
+        require(isTee || isAppWallet, "NovaAppBase: caller is not TEE or app wallet");
     }
 
     function _checkRegistry() internal view {
@@ -82,6 +99,16 @@ contract NovaAppBase is ISparsityApp {
         );
         novaRegistry = _registry;
         emit NovaRegistrySet(_registry);
+    }
+
+    /**
+     * @notice Set or rotate app-level wallet used by enclave app-wallet signing.
+     * @param _appWallet The app wallet address (non-zero)
+     */
+    function setAppWalletAddress(address _appWallet) external onlyOwner {
+        require(_appWallet != address(0), "NovaAppBase: invalid app wallet");
+        appWalletAddress = _appWallet;
+        emit AppWalletAddressSet(_appWallet);
     }
 
     /**

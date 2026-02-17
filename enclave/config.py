@@ -1,8 +1,9 @@
 """Centralized configuration for the Nova app template enclave.
 
 This project uses a single config module so it's obvious where to set:
-- app contract address
-- RPC URL / chain ID
+- auth chain (Nova Registry / KMS authorization)
+- business chain (application logic and contract writes)
+- app-wallet + KMS proof defaults
 - oracle update behavior
 
 Per your request, this file does NOT read environment variables.
@@ -10,21 +11,59 @@ Edit these constants directly.
 """
 
 from __future__ import annotations
-from typing import List
+# =============================================================================
+# Auth Chain (Registry / KMS authorization path)
+# =============================================================================
 
-# Chain ID (Base Sepolia default)
-CHAIN_ID: int = 84532
+# Chain where NovaAppRegistry lives (used for app-wallet proof metadata).
+AUTH_CHAIN_NAME: str = "base-sepolia"
+AUTH_CHAIN_ID: int = 84532
+AUTH_CHAIN_RPC_URL: str = "https://sepolia.base.org"
+
+# Nova App Registry contract used by app-wallet binding proof.
+NOVA_APP_REGISTRY_ADDRESS: str = "0x0f68E6e699f2E972998a1EcC000c7ce103E64cc8"
+
+
+# =============================================================================
+# Business Chain (application logic path)
+# =============================================================================
+
+# Business chain is Ethereum mainnet by default.
+BUSINESS_CHAIN_NAME: str = "ethereum-mainnet"
+BUSINESS_CHAIN_ID: int = 1
+
+# Used outside enclave mode. In enclave mode, app talks to local Helios at 127.0.0.1:8545.
+BUSINESS_CHAIN_DIRECT_RPC_URL: str = "https://eth.llamarpc.com"
+
+# Backward-compatible alias used by existing helper functions.
+CHAIN_ID: int = BUSINESS_CHAIN_ID
 
 # Deployed app contract address (ETHPriceOracleApp / NovaAppBase-derived)
-# Example: "0x1234..."
-CONTRACT_ADDRESS: str = "0x66Ac7d512e0df4abaF822454d08067D3EAAf3AB4"
+# Example: "0x1234...". Keep empty until deployed.
+CONTRACT_ADDRESS: str = ""
 
 # If true, enclave will broadcast signed transactions to RPC.
 # If false, enclave returns raw signed txs.
-BROADCAST_TX: bool = True
+BROADCAST_TX: bool = False
 
 # Storage demo: anchor state hash on writes
 ANCHOR_ON_WRITE: bool = True
+
+# S3 encryption mode expectation.
+# Actual encryption is enforced by `enclaver.yaml` storage.s3.encryption.mode.
+S3_ENCRYPTION_MODE: str = "kms"
+
+
+# =============================================================================
+# KMS / App Wallet defaults
+# =============================================================================
+
+# Update to your actual App + Version once enrolled.
+APP_ID: int = 0
+APP_VERSION_ID: int = 0
+
+# Default validity for generated app-wallet proofs.
+APP_WALLET_PROOF_TTL_SECONDS: int = 3600
 
 
 # =============================================================================

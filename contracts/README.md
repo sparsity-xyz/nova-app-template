@@ -1,110 +1,84 @@
-## Nova App Contract Deployment Flow
+# Contracts Guide (Nova App Template)
 
-To work with the Nova Registry, your app contract must implement
-`ISparsityApp` and expose `setNovaRegistry(address)` and `registerTEEWallet(address)`.
+This folder contains example contracts for the template backend.
 
-Recommended flow (Foundry-based):
+- `NovaAppBase.sol`: base app contract with registry wiring (`setNovaRegistry`, `registerTEEWallet`)
+- `ETHPriceOracleApp.sol`: demo app with state hash + ETH price update workflow
 
-1. **Deploy the app contract** (must extend [src/ISparsityApp.sol](src/ISparsityApp.sol)).
-2. **Verify the contract** on Base Sepolia (or your target chain).
-3. **Set the Nova Registry address** by calling `setNovaRegistry(address)` on your app contract.
-4. **Create the app on Nova Platform** and provide the app contract address.
-5. **ZKP Registration Service** generates proofs and registers/verifies the app in the Nova Registry.
-6. **Nova Registry** calls `registerTEEWallet` on your app contract.
+## Quick build
 
-Notes:
-- `registerTEEWallet` is **registry-only** in the template base contract.
-- Registry address must be set before registration can succeed.
-
-This template now includes an oracle demo contract:
-- `ETHPriceOracleApp` ([src/ETHPriceOracleApp.sol](src/ETHPriceOracleApp.sol))
-	- Stores `ethUsdPrice` and emits request/update events
-	- The enclave updates the price on-chain periodically, via API, or when it sees a request event
-
-### Step 1: Deploy the App Contract
-
-Install dependencies and run a quick sanity check before deploying (you must install `forge-std` explicitly):
-
-```shell
-cd nova-app-template/contracts
+```bash
+cd app-template/contracts
 forge install foundry-rs/forge-std
 forge build
 forge test
 ```
 
-Then deploy using the included Foundry script:
+## Deploy example contract
 
-```shell
-export RPC_URL=https://sepolia.base.org
+```bash
+export RPC_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR_API_KEY
 export PRIVATE_KEY=<your_private_key>
 
-# Deploy ETHPriceOracleApp (recommended)
 forge script script/Deploy.s.sol:DeployScript \
-	--rpc-url "$RPC_URL" \
-	--private-key "$PRIVATE_KEY" \
-	--broadcast
+  --rpc-url "$RPC_URL" \
+  --private-key "$PRIVATE_KEY" \
+  --broadcast
 ```
 
-Save the deployed contract address from the output as `APP_CONTRACT` for the next steps.
+## Verify (Ethereum mainnet)
 
-### Step 2: Verify the Contract (Base Sepolia)
-
-If you use Base Sepolia, you can verify with Etherscan-style APIs.
-You will need an API key and the deployed address:
-
-```shell
+```bash
 export APP_CONTRACT=<deployed_contract_address>
-export ETHERSCAN_API_KEY=<your_etherscan_or_basescan_key>
+export ETHERSCAN_API_KEY=<your_etherscan_api_key>
 
-# Example for Base Sepolia (chain-id 84532)
 forge verify-contract \
-	--chain-id 84532 \
-	--watch \
-	--etherscan-api-key "$ETHERSCAN_API_KEY" \
-	"$APP_CONTRACT" \
-	src/ETHPriceOracleApp.sol:ETHPriceOracleApp
+  --chain-id 1 \
+  --watch \
+  --etherscan-api-key "$ETHERSCAN_API_KEY" \
+  "$APP_CONTRACT" \
+  src/ETHPriceOracleApp.sol:ETHPriceOracleApp
 ```
 
-If your chain uses a different explorer, pass `--verifier-url` and `--verifier` as needed.
+## Registry wiring note (dual-chain template)
 
-### Step 3: Set the Nova Registry Address
+Template defaults use:
+- Auth chain (registry/KMS): Base Sepolia
+- Business chain (contract logic): Ethereum mainnet
 
-Call `setNovaRegistry(address)` on the deployed contract:
+If your business contract enforces registry callbacks on the same chain, adjust deployment strategy accordingly.
+At minimum, set the registry address your contract should trust:
 
-```shell
-export NOVA_REGISTRY=<nova_registry_contract_address>
+```bash
+export NOVA_REGISTRY=0x0f68E6e699f2E972998a1EcC000c7ce103E64cc8
 
 cast send "$APP_CONTRACT" \
-	"setNovaRegistry(address)" \
-	"$NOVA_REGISTRY" \
-	--rpc-url "$RPC_URL" \
-	--private-key "$PRIVATE_KEY"
+  "setNovaRegistry(address)" \
+  "$NOVA_REGISTRY" \
+  --rpc-url "$RPC_URL" \
+  --private-key "$PRIVATE_KEY"
+```
 
----
+Optional but recommended for app-wallet mode:
 
-## Wire the Contract into the Enclave
+```bash
+export APP_WALLET=<address_from_/api/app-wallet/address>
 
-The enclave uses a static config file (no environment variables). After deploying, set the address here:
-
-- [../enclave/config.py](../enclave/config.py)
-  - `CONTRACT_ADDRESS = "0x..."`
-  - Optionally adjust `RPC_URL`, `CHAIN_ID`, `BROADCAST_TX`
-
-If `BROADCAST_TX = False`, the enclave will return raw signed transactions.
-If `BROADCAST_TX = True`, the enclave will attempt to broadcast transactions via `RPC_URL`.
-
----
-
-## Trigger an On-Chain Update Request (Manual)
-
-Anyone can request a price update by emitting an event on-chain:
-
-```shell
 cast send "$APP_CONTRACT" \
-	"requestETHPriceUpdate()" \
-	--rpc-url "$RPC_URL" \
-	--private-key "$PRIVATE_KEY"
+  "setAppWalletAddress(address)" \
+  "$APP_WALLET" \
+  --rpc-url "$RPC_URL" \
+  --private-key "$PRIVATE_KEY"
 ```
 
-The enclave's event monitor will detect `ETHPriceUpdateRequested` and respond by submitting `updateETHPrice(...)`.
+## Wire into template backend
+
+Update `app-template/enclave/config.py`:
+
+```python
+CONTRACT_ADDRESS = "0x..."
+BROADCAST_TX = False  # set True when you're ready to broadcast from enclave
 ```
+
+The backend now prefers app-wallet signing for business transactions and falls back to TEE wallet signing when app-wallet is unavailable.
+`ETHPriceOracleApp` accepts both signers (`onlyTEEOrAppWallet`) once app wallet is set.

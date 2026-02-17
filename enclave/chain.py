@@ -4,21 +4,30 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 from web3 import Web3
 from web3.exceptions import ContractLogicError
 from eth_hash.auto import keccak
 
-from config import CHAIN_ID
+from config import (
+    AUTH_CHAIN_ID,
+    AUTH_CHAIN_NAME,
+    AUTH_CHAIN_RPC_URL,
+    BUSINESS_CHAIN_DIRECT_RPC_URL,
+    BUSINESS_CHAIN_ID,
+    BUSINESS_CHAIN_NAME,
+)
 
 logger = logging.getLogger("nova-app.chain")
 
+# Minimum confirmations for reorg-resistant read calls.
+CONFIRMATION_DEPTH: int = 6
+
 class Chain:
     """Helper for interacting with the blockchain via Helios RPC."""
-    
-    DEFAULT_MOCK_RPC = "http://odyn.sparsity.cloud:8545"
+
     DEFAULT_HELIOS_RPC = "http://127.0.0.1:8545"
 
     def __init__(self, rpc_url: Optional[str] = None):
@@ -30,8 +39,8 @@ class Chain:
                 # In enclave: always default to the local trustless Helios instance
                 self.endpoint = self.DEFAULT_HELIOS_RPC
             else:
-                # Outside enclave: always use the remote Mockup RPC
-                self.endpoint = self.DEFAULT_MOCK_RPC
+                # Outside enclave: default to Ethereum mainnet public RPC.
+                self.endpoint = BUSINESS_CHAIN_DIRECT_RPC_URL
             
         self.w3 = Web3(Web3.HTTPProvider(self.endpoint))
 
@@ -44,7 +53,7 @@ class Chain:
             try:
                 if self.w3.is_connected():
                     if not is_enclave:
-                        logger.info("Mock RPC connected")
+                        logger.info("Business RPC connected")
                         return True
                         
                     # Helios-specific sync check
@@ -54,11 +63,11 @@ class Chain:
                         if block > 0:
                             logger.info(f"Helios ready at block {block}")
                             return True
-                logger.info(f"Waiting for {'Helios' if is_enclave else 'Mock'} RPC...")
+                logger.info(f"Waiting for {'Helios' if is_enclave else 'business'} RPC...")
             except Exception:
                 pass
             time.sleep(5)
-        raise TimeoutError(f"{'Helios' if is_enclave else 'Mock'} RPC failed to connect in time")
+        raise TimeoutError(f"{'Helios' if is_enclave else 'business'} RPC failed to connect in time")
 
     def get_balance(self, address: str) -> int:
         """Get balance in wei."""
@@ -86,6 +95,26 @@ class Chain:
         tx_hash = self.w3.eth.send_raw_transaction(signed_hex)
         res = tx_hash.hex()
         return res if res.startswith("0x") else f"0x{res}"
+
+    def eth_call(self, to: str, data: str, block_identifier: Any = "latest") -> bytes:
+        result = self.w3.eth.call(
+            {"to": Web3.to_checksum_address(to), "data": data},
+            block_identifier=block_identifier,
+        )
+        return bytes(result)
+
+    def eth_call_finalized(self, to: str, data: str, confirmations: int = CONFIRMATION_DEPTH) -> bytes:
+        """
+        Reorg-resistant read call using a confirmed block height.
+        Falls back to latest if confirmed block call is unavailable.
+        """
+        try:
+            latest_block = self.w3.eth.block_number
+            confirmed_block = max(0, latest_block - max(0, int(confirmations)))
+            return self.eth_call(to, data, block_identifier=confirmed_block)
+        except Exception as exc:
+            logger.debug(f"Finalized eth_call fallback to latest: {exc}")
+            return self.eth_call(to, data, block_identifier="latest")
 
 # Default chain instance
 _chain = Chain()
@@ -118,6 +147,46 @@ def _rpc_call(rpc_url: str, method: str, params: list) -> Any:
 def rpc_call_with_failover(method: str, params: list) -> Any:
     return _rpc_call("", method, params)
 
+
+def get_business_chain_status() -> Dict[str, Any]:
+    status: Dict[str, Any] = {
+        "chain_name": BUSINESS_CHAIN_NAME,
+        "chain_id": BUSINESS_CHAIN_ID,
+        "rpc_url": _chain.endpoint,
+        "connected": False,
+        "latest_block": None,
+    }
+    try:
+        status["connected"] = bool(_chain.w3.is_connected())
+        if status["connected"]:
+            status["latest_block"] = _chain.w3.eth.block_number
+    except Exception as exc:
+        status["error"] = str(exc)
+    return status
+
+
+def get_auth_chain_status() -> Dict[str, Any]:
+    status: Dict[str, Any] = {
+        "chain_name": AUTH_CHAIN_NAME,
+        "chain_id": AUTH_CHAIN_ID,
+        "rpc_url": AUTH_CHAIN_RPC_URL,
+        "latest_block": None,
+    }
+    payload = {"jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 1}
+    try:
+        response = requests.post(AUTH_CHAIN_RPC_URL, json=payload, timeout=8)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("error"):
+            status["error"] = data["error"]
+            return status
+        block_hex = data.get("result")
+        if isinstance(block_hex, str) and block_hex.startswith("0x"):
+            status["latest_block"] = int(block_hex, 16)
+    except Exception as exc:
+        status["error"] = str(exc)
+    return status
+
 def sign_update_ETH_price(
     *,
     odyn: Any,
@@ -127,12 +196,15 @@ def sign_update_ETH_price(
     price_usd: int,
     updated_at: int,
     broadcast: bool = False,
+    sign_tx_fn: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+    sender_address: Optional[str] = None,
+    signer_kind: str = "tee_wallet",
 ) -> Dict[str, Any]:
-    tee_address = Web3.to_checksum_address(odyn.eth_address())
+    tx_sender = Web3.to_checksum_address(sender_address or odyn.eth_address())
     contract_address = Web3.to_checksum_address(contract_address)
     w3 = _chain.w3
     
-    nonce = w3.eth.get_transaction_count(tee_address)
+    nonce = w3.eth.get_transaction_count(tx_sender)
     priority_fee, max_fee = _chain.estimate_fees()
 
     # ABI encode
@@ -153,20 +225,17 @@ def sign_update_ETH_price(
         "data": data,
     }
 
-    signed = odyn.sign_tx(tx)
-    result = {
-        "raw_transaction": signed.get("raw_transaction"),
-        "transaction_hash": signed.get("transaction_hash"),
-        "address": signed.get("address"),
-    }
+    signed = sign_tx_fn(tx) if sign_tx_fn else odyn.sign_tx(tx)
+    signed.setdefault("address", tx_sender)
 
     return _broadcast_and_verify(
         w3=w3,
         signed=signed,
         broadcast=broadcast,
-        tee_address=tee_address,
+        tee_address=tx_sender,
         contract_address=contract_address,
         data=data,
+        signer_kind=signer_kind,
     )
 
 def sign_update_state_hash(
@@ -176,13 +245,16 @@ def sign_update_state_hash(
     chain_id: int,
     state_hash: str,
     broadcast: bool = False,
+    sign_tx_fn: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+    sender_address: Optional[str] = None,
+    signer_kind: str = "tee_wallet",
 ) -> Dict[str, Any]:
     """Build, sign and optionally broadcast updateStateHash transaction."""
-    tee_address = Web3.to_checksum_address(odyn.eth_address())
+    tx_sender = Web3.to_checksum_address(sender_address or odyn.eth_address())
     contract_address = Web3.to_checksum_address(contract_address)
     w3 = _chain.w3
     
-    nonce = w3.eth.get_transaction_count(tee_address)
+    nonce = w3.eth.get_transaction_count(tx_sender)
     priority_fee, max_fee = _chain.estimate_fees()
 
     clean_hash = state_hash.replace("0x", "").zfill(64)
@@ -200,14 +272,16 @@ def sign_update_state_hash(
         "data": data,
     }
 
-    signed = odyn.sign_tx(tx)
+    signed = sign_tx_fn(tx) if sign_tx_fn else odyn.sign_tx(tx)
+    signed.setdefault("address", tx_sender)
     return _broadcast_and_verify(
         w3=w3,
         signed=signed,
         broadcast=broadcast,
-        tee_address=tee_address,
+        tee_address=tx_sender,
         contract_address=contract_address,
         data=data,
+        signer_kind=signer_kind,
     )
 
 def _broadcast_and_verify(
@@ -218,13 +292,15 @@ def _broadcast_and_verify(
     tee_address: str,
     contract_address: str,
     data: str,
+    signer_kind: str = "tee_wallet",
 ) -> Dict[str, Any]:
     """Helper to broadcast tx and verify execution status with detailed error reporting."""
     result = {
         "raw_transaction": signed.get("raw_transaction"),
         "transaction_hash": signed.get("transaction_hash"),
         "address": signed.get("address"),
-        "broadcasted": False
+        "broadcasted": False,
+        "signer_kind": signer_kind,
     }
 
     if not broadcast:
@@ -271,11 +347,7 @@ def get_onchain_state_hash(*, contract_address: str) -> Optional[str]:
     if not contract_address:
         return None
     try:
-        w3 = _chain.w3
-        result = w3.eth.call({
-            "to": Web3.to_checksum_address(contract_address),
-            "data": STATE_HASH_SELECTOR
-        })
+        result = _chain.eth_call_finalized(contract_address, STATE_HASH_SELECTOR)
         if not result or result in (b'', b'\x00'*32):
             return None
         return "0x" + result.hex().replace("0x", "").zfill(64)

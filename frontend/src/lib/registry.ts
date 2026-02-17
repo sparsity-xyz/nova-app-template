@@ -5,8 +5,8 @@
  * including appUrl, teePubkey, and codeMeasurement for verified TLS connections.
  */
 
-// Default registry contract address on Base Sepolia
-export const DEFAULT_REGISTRY_ADDRESS = '0x58e41D71606410E43BDA23C348B68F5A93245461';
+// Default registry contract address on Base Sepolia (latest proxy deployment)
+export const DEFAULT_REGISTRY_ADDRESS = '0x0f68E6e699f2E972998a1EcC000c7ce103E64cc8';
 
 // Default RPC URL for Base Sepolia
 export const DEFAULT_RPC_URL = 'https://sepolia.base.org';
