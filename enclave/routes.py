@@ -50,14 +50,10 @@ from chain import (
 )
 from config import (
     ANCHOR_ON_WRITE,
-    APP_ID,
-    APP_VERSION_ID,
-    APP_WALLET_PROOF_TTL_SECONDS,
     AUTH_CHAIN_ID,
     BUSINESS_CHAIN_ID,
     BUSINESS_CHAIN_NAME,
     CONTRACT_ADDRESS,
-    NOVA_APP_REGISTRY_ADDRESS,
     BROADCAST_TX,
     AUTH_CHAIN_LOCAL_RPC_URL,
     BUSINESS_CHAIN_LOCAL_RPC_URL,
@@ -219,13 +215,7 @@ class AppWalletSignRequest(BaseModel):
     message: str
 
 
-class AppWalletProofRequest(BaseModel):
-    app_id: Optional[int] = None
-    version_id: Optional[int] = None
-    tee_wallet_address: Optional[str] = None
-    registry_address: Optional[str] = None
-    chain_id: Optional[int] = None
-    deadline: Optional[int] = None
+
 
 
 # =============================================================================
@@ -589,47 +579,7 @@ def app_wallet_sign(req: AppWalletSignRequest):
         _raise_platform_error(err)
 
 
-@router.post("/app-wallet/proof")
-def app_wallet_proof(req: AppWalletProofRequest):
-    client = _require_kms_client()
-    if not odyn:
-        raise HTTPException(status_code=500, detail="Odyn not initialized")
 
-    app_id = req.app_id if req.app_id is not None else APP_ID
-    version_id = req.version_id if req.version_id is not None else APP_VERSION_ID
-    if app_id <= 0 or version_id <= 0:
-        raise HTTPException(
-            status_code=400,
-            detail="app_id and version_id must be provided (or set APP_ID/APP_VERSION_ID in config.py)",
-        )
-
-    try:
-        tee_wallet_address = req.tee_wallet_address or Web3.to_checksum_address(odyn.eth_address())
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to resolve tee wallet address: {exc}")
-
-    registry_address = req.registry_address or NOVA_APP_REGISTRY_ADDRESS
-    chain_id = req.chain_id if req.chain_id is not None else AUTH_CHAIN_ID
-    deadline = req.deadline
-    if deadline is None:
-        deadline = int(datetime.now(tz=timezone.utc).timestamp()) + APP_WALLET_PROOF_TTL_SECONDS
-
-    try:
-        return client.app_wallet_proof(
-            app_id=app_id,
-            version_id=version_id,
-            tee_wallet_address=tee_wallet_address,
-            registry_address=registry_address,
-            chain_id=chain_id,
-            deadline=deadline,
-        )
-    except PlatformApiError as err:
-        _raise_platform_error(err)
-
-
-@router.post("/app-wallet/proof/default")
-def app_wallet_proof_default():
-    return app_wallet_proof(AppWalletProofRequest())
 
 
 @router.post("/app-wallet/sign-tx")

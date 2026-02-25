@@ -354,25 +354,7 @@ class Odyn:
     def app_wallet_sign(self, message: str) -> Dict[str, Any]:
         return self._call("POST", "/v1/app-wallet/sign", {"message": message})
 
-    def app_wallet_proof(
-        self,
-        *,
-        app_id: int,
-        version_id: int,
-        tee_wallet_address: str,
-        registry_address: str,
-        chain_id: int,
-        deadline: int,
-    ) -> Dict[str, Any]:
-        payload = {
-            "app_id": app_id,
-            "version_id": version_id,
-            "tee_wallet_address": tee_wallet_address,
-            "registry_address": registry_address,
-            "chain_id": chain_id,
-            "deadline": deadline,
-        }
-        return self._call("POST", "/v1/app-wallet/proof", payload)
+
 
     def app_wallet_sign_tx(self, tx: Dict[str, Any], include_attestation: bool = False) -> Dict[str, Any]:
         payload: Dict[str, Any]

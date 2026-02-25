@@ -61,8 +61,6 @@ Set these values:
 
 ```python
 CONTRACT_ADDRESS = "0xYourBusinessContract"
-APP_ID = 123
-APP_VERSION_ID = 1
 BROADCAST_TX = False  # set True only after wallet funding and dry-run verification
 ```
 
@@ -129,8 +127,6 @@ In `Enclaver Features` tab:
 4. Run `Get Address` and `Build Default Proof` for app wallet.
 5. Run `Run Full Enclaver Demo` for end-to-end smoke verification across all four capabilities.
 
-If proof fails with missing app metadata, set `APP_ID` and `APP_VERSION_ID` in `enclave/config.py`.
-
 ## 9. Common issues
 
 - `KMS integration not configured`
@@ -139,7 +135,5 @@ If proof fails with missing app metadata, set `APP_ID` and `APP_VERSION_ID` in `
   - Ensure `helios_rpc.enabled=true` and one chain has `local_rpc_port: 18545`.
 - `storage.s3.encryption.mode=kms` startup failure
   - Ensure KMS integration is enabled.
-- `app_wallet proof` failure
-  - `APP_ID/APP_VERSION_ID` not set, or registry metadata mismatch.
 - Transaction signing works but no on-chain update
   - `BROADCAST_TX=false` returns signed tx only; it does not broadcast.

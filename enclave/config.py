@@ -23,8 +23,7 @@ AUTH_CHAIN_RPC_URL: str = "https://sepolia.base.org"
 # instance to be available at this local endpoint (configured in enclaver.yaml).
 AUTH_CHAIN_LOCAL_RPC_URL: str = "http://127.0.0.1:18545"
 
-# Nova App Registry contract used by app-wallet binding proof.
-NOVA_APP_REGISTRY_ADDRESS: str = "0x0f68E6e699f2E972998a1EcC000c7ce103E64cc8"
+
 
 
 # =============================================================================
@@ -64,16 +63,7 @@ S3_ENCRYPTION_KEY_VERSION: str = "v1"
 S3_ENCRYPTION_ACCEPT_PLAINTEXT: bool = True
 
 
-# =============================================================================
-# KMS / App Wallet defaults
-# =============================================================================
 
-# Update to your actual App + Version once enrolled.
-APP_ID: int = 0
-APP_VERSION_ID: int = 0
-
-# Default validity for generated app-wallet proofs.
-APP_WALLET_PROOF_TTL_SECONDS: int = 3600
 
 
 # =============================================================================
