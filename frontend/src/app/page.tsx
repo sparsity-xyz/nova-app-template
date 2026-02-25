@@ -19,10 +19,10 @@ interface ApiResponse {
     type?: string;
 }
 
-// Base Sepolia block explorer
-const BASESCAN_URL = 'https://sepolia.basescan.org';
-const addressLink = (addr: string) => `${BASESCAN_URL}/address/${addr}`;
-const txLink = (hash: string) => `${BASESCAN_URL}/tx/${hash}`;
+// Business-chain explorer (default business chain is Ethereum mainnet)
+const ETHERSCAN_URL = 'https://etherscan.io';
+const addressLink = (addr: string) => `${ETHERSCAN_URL}/address/${addr}`;
+const txLink = (hash: string) => `${ETHERSCAN_URL}/tx/${hash}`;
 
 export default function Home() {
     const [client] = useState(() => new EnclaveClient());
@@ -52,6 +52,12 @@ export default function Home() {
     const [echoMsg, setEchoMsg] = useState('Hello from Nova!');
     const [storageKey, setStorageKey] = useState('user_settings');
     const [storageVal, setStorageVal] = useState('{"theme": "dark"}');
+    const [kmsDerivePath, setKmsDerivePath] = useState('app/session/demo');
+    const [kmsDeriveContext, setKmsDeriveContext] = useState('demo');
+    const [kmsDeriveLength, setKmsDeriveLength] = useState(32);
+    const [kmsKvKey, setKmsKvKey] = useState('config/demo');
+    const [kmsKvValue, setKmsKvValue] = useState('hello-from-kms');
+    const [appWalletMessage, setAppWalletMessage] = useState('Nova app wallet signature demo');
 
     const [echoTrace, setEchoTrace] = useState<EncryptedCallTrace | null>(null);
 
@@ -518,7 +524,9 @@ export default function Home() {
                     <div className="flex flex-wrap gap-3 text-xs text-slate-500">
                         <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">TLS</span>
                         <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">S3 Storage</span>
+                        <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">KMS/App Wallet</span>
                         <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">Oracles</span>
+                        <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">Dual Chain</span>
                         <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">Event Listener</span>
                     </div>
                 </div>
@@ -534,6 +542,7 @@ export default function Home() {
                                 { id: 'identity', label: 'Identity & TLS', icon: '🔑' },
                                 { id: 'secure-echo', label: 'Secure Echo', icon: '🔒' },
                                 { id: 'storage', label: 'S3 Storage', icon: '📦' },
+                                { id: 'kms-wallet', label: 'KMS & App Wallet', icon: '🗝️' },
                                 { id: 'oracle', label: 'Oracle Demo', icon: '🌐' },
                                 { id: 'events', label: 'Event Monitor', icon: '📊' },
                             ].map(tab => (
@@ -877,11 +886,29 @@ export default function Home() {
                                                     <code className="text-slate-800 break-all">{activeResponse.data.tee_address}</code>
                                                 </div>
                                             )}
+                                            {activeResponse.data.signer_address && (
+                                                <div className="bg-white border border-slate-200 rounded-xl p-3">
+                                                    <p className="text-slate-500 mb-1">Tx Signer Address</p>
+                                                    <code className="text-slate-800 break-all">{activeResponse.data.signer_address}</code>
+                                                </div>
+                                            )}
+                                            {activeResponse.data.tx_signer && (
+                                                <div className="bg-white border border-slate-200 rounded-xl p-3">
+                                                    <p className="text-slate-500 mb-1">Tx Signer Type</p>
+                                                    <code className="text-slate-800">{activeResponse.data.tx_signer}</code>
+                                                </div>
+                                            )}
                                             {/* TEE Balance */}
-                                            {activeResponse.data.tee_balance_ETH !== undefined && (
+                                            {activeResponse.data.tee_balance_eth !== undefined && (
                                                 <div className="bg-white border border-slate-200 rounded-xl p-3">
                                                     <p className="text-slate-500 mb-1">TEE Wallet Balance</p>
-                                                    <code className="text-slate-800">{activeResponse.data.tee_balance_ETH.toFixed(6)} ETH</code>
+                                                    <code className="text-slate-800">{activeResponse.data.tee_balance_eth.toFixed(6)} ETH</code>
+                                                </div>
+                                            )}
+                                            {activeResponse.data.signer_balance_eth !== undefined && (
+                                                <div className="bg-white border border-slate-200 rounded-xl p-3">
+                                                    <p className="text-slate-500 mb-1">Tx Signer Balance</p>
+                                                    <code className="text-slate-800">{activeResponse.data.signer_balance_eth.toFixed(6)} ETH</code>
                                                 </div>
                                             )}
                                             {/* Contract Address */}
@@ -969,6 +996,149 @@ export default function Home() {
                                         </div>
                                     </div>
                                 )}
+                            </div>
+                        )}
+
+                        {activeTab === 'kms-wallet' && (
+                            <div className="space-y-6">
+                                <h2 className="text-xl font-semibold mb-4">KMS & App Wallet</h2>
+                                <p className="text-slate-600 text-sm leading-relaxed mb-6">
+                                    Validate the dual-chain template setup: KMS/app-wallet authorization on Base Sepolia,
+                                    and business logic on Ethereum mainnet.
+                                </p>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <button
+                                        onClick={() => callApi('/api/chains', 'GET')}
+                                        disabled={loading || !status.connected}
+                                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3 rounded-lg font-semibold text-sm"
+                                    >
+                                        Check Chain Topology
+                                    </button>
+                                    <button
+                                        onClick={() => callApi('/api/storage/config', 'GET')}
+                                        disabled={loading || !status.connected}
+                                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3 rounded-lg font-semibold text-sm"
+                                    >
+                                        Check S3 Encryption Config
+                                    </button>
+                                </div>
+
+                                <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50 space-y-4">
+                                    <h3 className="text-sm font-semibold text-slate-800">KMS Derive + KV</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <input
+                                            className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                            value={kmsDerivePath}
+                                            onChange={(e) => setKmsDerivePath(e.target.value)}
+                                            placeholder="Derive path"
+                                        />
+                                        <input
+                                            className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                            value={kmsDeriveContext}
+                                            onChange={(e) => setKmsDeriveContext(e.target.value)}
+                                            placeholder="Context"
+                                        />
+                                        <input
+                                            type="number"
+                                            className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                            value={kmsDeriveLength}
+                                            min={1}
+                                            max={4096}
+                                            onChange={(e) => setKmsDeriveLength(Math.max(1, Number(e.target.value || 32)))}
+                                            placeholder="Length"
+                                        />
+                                    </div>
+                                    <div className="flex flex-wrap gap-3">
+                                        <button
+                                            onClick={() => callApi('/api/kms/derive', 'POST', {
+                                                path: kmsDerivePath,
+                                                context: kmsDeriveContext,
+                                                length: kmsDeriveLength,
+                                            })}
+                                            disabled={loading || !status.connected}
+                                            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold text-sm"
+                                        >
+                                            Derive Key
+                                        </button>
+                                        <input
+                                            className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 min-w-[220px]"
+                                            value={kmsKvKey}
+                                            onChange={(e) => setKmsKvKey(e.target.value)}
+                                            placeholder="KV key"
+                                        />
+                                        <input
+                                            className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 min-w-[220px]"
+                                            value={kmsKvValue}
+                                            onChange={(e) => setKmsKvValue(e.target.value)}
+                                            placeholder="KV value"
+                                        />
+                                        <button
+                                            onClick={() => callApi('/api/kms/kv/put', 'POST', { key: kmsKvKey, value: kmsKvValue, ttl_ms: 0 })}
+                                            disabled={loading || !status.connected}
+                                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold text-sm"
+                                        >
+                                            KV Put
+                                        </button>
+                                        <button
+                                            onClick={() => callApi('/api/kms/kv/get', 'POST', { key: kmsKvKey })}
+                                            disabled={loading || !status.connected}
+                                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-semibold text-sm"
+                                        >
+                                            KV Get
+                                        </button>
+                                        <button
+                                            onClick={() => callApi('/api/kms/kv/delete', 'POST', { key: kmsKvKey })}
+                                            disabled={loading || !status.connected}
+                                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-semibold text-sm"
+                                        >
+                                            KV Delete
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-2xl border border-slate-200 p-5 bg-white space-y-4">
+                                    <h3 className="text-sm font-semibold text-slate-800">App Wallet</h3>
+                                    <div className="flex flex-wrap gap-3">
+                                        <button
+                                            onClick={() => callApi('/api/app-wallet/address', 'GET')}
+                                            disabled={loading || !status.connected}
+                                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-semibold text-sm"
+                                        >
+                                            Get Address
+                                        </button>
+                                        <button
+                                            onClick={() => callApi('/api/app-wallet/proof/default', 'POST')}
+                                            disabled={loading || !status.connected}
+                                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm"
+                                        >
+                                            Build Default Proof
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                        <label className="text-xs text-slate-500">EIP-191 Message</label>
+                                        <div className="flex gap-3">
+                                            <input
+                                                className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 flex-1"
+                                                value={appWalletMessage}
+                                                onChange={(e) => setAppWalletMessage(e.target.value)}
+                                                placeholder="Message to sign"
+                                            />
+                                            <button
+                                                onClick={() => callApi('/api/app-wallet/sign', 'POST', { message: appWalletMessage })}
+                                                disabled={loading || !status.connected}
+                                                className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm whitespace-nowrap"
+                                            >
+                                                Sign Message
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-slate-500">
+                                        If proof generation fails, set <code className="bg-slate-100 px-1 rounded">APP_ID</code> and
+                                        <code className="bg-slate-100 px-1 rounded ml-1">APP_VERSION_ID</code> in
+                                        <code className="bg-slate-100 px-1 rounded ml-1">enclave/config.py</code>.
+                                    </p>
+                                </div>
                             </div>
                         )}
 

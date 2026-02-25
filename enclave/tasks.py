@@ -26,7 +26,7 @@ import json
 import logging
 from datetime import datetime
 from datetime import timezone
-from typing import Optional, TYPE_CHECKING, Dict, Any
+from typing import Optional, TYPE_CHECKING, Dict, Any, Callable, Tuple
 
 import requests
 from eth_hash.auto import keccak
@@ -34,7 +34,7 @@ from eth_hash.auto import keccak
 from chain import compute_state_hash, sign_update_state_hash, sign_update_ETH_price, rpc_call_with_failover
 from config import (
     CONTRACT_ADDRESS,
-    CHAIN_ID,
+    BUSINESS_CHAIN_ID,
     BROADCAST_TX,
     ORACLE_PRICE_UPDATE_MINUTES,
     ORACLE_EVENT_POLL_LOOKBACK_BLOCKS,
@@ -114,21 +114,46 @@ def fetch_eth_price_usd() -> int:
     return int(response.json()["ethereum"]["usd"])
 
 
+def _resolve_tx_signer() -> Tuple[str, str, Callable[[Dict[str, Any]], Dict[str, Any]]]:
+    if not odyn:
+        raise RuntimeError("Odyn not initialized")
+
+    tee_wallet_address = odyn.eth_address()
+    try:
+        app_wallet = odyn.app_wallet_address()
+        app_wallet_address = app_wallet.get("address")
+        if app_wallet_address:
+            def _app_wallet_signer(tx: Dict[str, Any]) -> Dict[str, Any]:
+                return odyn.app_wallet_sign_tx(tx)
+            return "app_wallet", app_wallet_address, _app_wallet_signer
+    except Exception as exc:
+        logger.warning(f"App-wallet signer unavailable, falling back to TEE signer: {exc}")
+
+    def _tee_signer(tx: Dict[str, Any]) -> Dict[str, Any]:
+        return odyn.sign_tx(tx)
+
+    return "tee_wallet", tee_wallet_address, _tee_signer
+
+
 def update_eth_price_on_chain(*, request_id: int, reason: str) -> Dict[str, Any]:
     if not (odyn and CONTRACT_ADDRESS):
         raise RuntimeError("Oracle not configured (missing odyn or CONTRACT_ADDRESS)")
 
+    signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
     price_usd = fetch_eth_price_usd()
     updated_at = int(datetime.now(tz=timezone.utc).timestamp())
 
     signed = sign_update_ETH_price(
         odyn=odyn,
         contract_address=CONTRACT_ADDRESS,
-        chain_id=CHAIN_ID,
+        chain_id=BUSINESS_CHAIN_ID,
         request_id=request_id,
         price_usd=price_usd,
         updated_at=updated_at,
         broadcast=BROADCAST_TX,
+        sign_tx_fn=sign_tx_fn,
+        sender_address=signer_address,
+        signer_kind=signer_kind,
     )
 
     oracle_state = app_state.setdefault("data", {}).setdefault("oracle", {}) if app_state else {}
@@ -145,6 +170,8 @@ def update_eth_price_on_chain(*, request_id: int, reason: str) -> Dict[str, Any]
         "tx": signed,
         "broadcast": BROADCAST_TX,
         "contract_address": CONTRACT_ADDRESS,
+        "tx_signer": signer_kind,
+        "signer_address": signer_address,
     }
 
 
@@ -162,14 +189,18 @@ def update_state_hash_on_chain(state_hash: str) -> Optional[str]:
         return None
     
     try:
+        signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
         signed = sign_update_state_hash(
             odyn=odyn,
             contract_address=CONTRACT_ADDRESS,
-            chain_id=CHAIN_ID,
+            chain_id=BUSINESS_CHAIN_ID,
             state_hash=state_hash,
             broadcast=BROADCAST_TX,
+            sign_tx_fn=sign_tx_fn,
+            sender_address=signer_address,
+            signer_kind=signer_kind,
         )
-        logger.info(f"Signed state hash update tx: {signed['transaction_hash']}")
+        logger.info(f"Signed state hash update tx: {signed['transaction_hash']} (signer={signer_kind})")
         return signed.get("raw_transaction")
     except Exception as e:
         logger.error(f"Failed to sign state hash tx: {e}")
@@ -309,7 +340,7 @@ def poll_contract_events():
         signed = sign_update_state_hash(
             odyn=odyn,
             contract_address=CONTRACT_ADDRESS,
-            chain_id=CHAIN_ID,
+            chain_id=BUSINESS_CHAIN_ID,
             state_hash=state_hash,
             broadcast=BROADCAST_TX,
         )
@@ -410,4 +441,3 @@ def oracle_periodic_update():
         oracle_state = app_state.setdefault("data", {}).setdefault("oracle", {})
         oracle_state["last_error"] = str(e)
         logger.warning(f"Periodic oracle update failed: {e}")
-

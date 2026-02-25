@@ -98,6 +98,19 @@ class Odyn:
         Returns:
             Dict with raw_transaction, transaction_hash, signature
         """
+        if "kind" not in tx:
+            # Accept common web3-style tx dicts and normalize to Odyn schema.
+            tx = {
+                "kind": "structured",
+                "chain_id": hex(tx["chainId"]),
+                "nonce": hex(tx["nonce"]),
+                "max_priority_fee_per_gas": hex(tx["maxPriorityFeePerGas"]),
+                "max_fee_per_gas": hex(tx["maxFeePerGas"]),
+                "gas_limit": hex(tx["gas"]),
+                "to": tx["to"],
+                "value": hex(tx.get("value", 0)),
+                "data": tx.get("data", "0x"),
+            }
         return self._call("POST", "/v1/eth/sign-tx", {"payload": tx})
 
     def sign_message(self, message: str, include_attestation: bool = False) -> dict:
@@ -317,6 +330,59 @@ class Odyn:
         res.raise_for_status()
         return res.json()
 
+    # =========================================================================
+    # KMS / App Wallet (via Enclaver internal API)
+    # =========================================================================
+
+    def kms_derive(self, path: str, context: str = "", length: int = 32) -> Dict[str, Any]:
+        payload = {"path": path, "context": context, "length": length}
+        return self._call("POST", "/v1/kms/derive", payload)
+
+    def kms_kv_get(self, key: str) -> Dict[str, Any]:
+        return self._call("POST", "/v1/kms/kv/get", {"key": key})
+
+    def kms_kv_put(self, key: str, value: str, ttl_ms: int = 0) -> Dict[str, Any]:
+        payload = {"key": key, "value": value, "ttl_ms": ttl_ms}
+        return self._call("POST", "/v1/kms/kv/put", payload)
+
+    def kms_kv_delete(self, key: str) -> Dict[str, Any]:
+        return self._call("POST", "/v1/kms/kv/delete", {"key": key})
+
+    def app_wallet_address(self) -> Dict[str, Any]:
+        return self._call("GET", "/v1/app-wallet/address")
+
+    def app_wallet_sign(self, message: str) -> Dict[str, Any]:
+        return self._call("POST", "/v1/app-wallet/sign", {"message": message})
+
+    def app_wallet_proof(
+        self,
+        *,
+        app_id: int,
+        version_id: int,
+        tee_wallet_address: str,
+        registry_address: str,
+        chain_id: int,
+        deadline: int,
+    ) -> Dict[str, Any]:
+        payload = {
+            "app_id": app_id,
+            "version_id": version_id,
+            "tee_wallet_address": tee_wallet_address,
+            "registry_address": registry_address,
+            "chain_id": chain_id,
+            "deadline": deadline,
+        }
+        return self._call("POST", "/v1/app-wallet/proof", payload)
+
+    def app_wallet_sign_tx(self, tx: Dict[str, Any], include_attestation: bool = False) -> Dict[str, Any]:
+        payload: Dict[str, Any]
+        if "payload" in tx:
+            payload = dict(tx)
+        else:
+            payload = {"payload": tx}
+        payload.setdefault("include_attestation", include_attestation)
+        return self._call("POST", "/v1/app-wallet/sign-tx", payload)
+
 
 # =============================================================================
 # Quick Test (run directly: python odyn.py)
@@ -328,5 +394,3 @@ if __name__ == "__main__":
         print(f"TEE Address: {o.eth_address()}")
     except Exception as e:
         print(f"Could not connect to Odyn: {e}")
-
-

@@ -64,7 +64,7 @@ contract ETHPriceOracleApp is NovaAppBase {
         uint256 requestId,
         uint256 priceUsd,
         uint256 updatedAt
-    ) external onlyTEE {
+    ) external onlyTEEOrAppWallet {
         require(priceUsd > 0, "ETHPriceOracleApp: invalid price");
 
         ETHUsdPrice = priceUsd;
@@ -77,7 +77,7 @@ contract ETHPriceOracleApp is NovaAppBase {
      * @notice Update the state hash (called by TEE after state save)
      * @param _newHash The keccak256 hash returned by Odyn's /v1/state/save
      */
-    function updateStateHash(bytes32 _newHash) external onlyTEE {
+    function updateStateHash(bytes32 _newHash) external onlyTEEOrAppWallet {
         require(_newHash != bytes32(0), "ETHPriceOracleApp: invalid hash");
 
         stateHash = _newHash;

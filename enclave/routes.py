@@ -31,7 +31,7 @@ import json
 import logging
 import base64
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, TYPE_CHECKING
+from typing import Optional, Dict, Any, TYPE_CHECKING, Callable, Tuple
 
 import requests
 from web3 import Web3
@@ -40,8 +40,27 @@ from fastapi import APIRouter, HTTPException, Body, Response
 from pydantic import BaseModel
 
 from chain import compute_state_hash, sign_update_state_hash, get_onchain_state_hash
-from chain import sign_update_ETH_price, rpc_call_with_failover, _chain
-from config import CONTRACT_ADDRESS, CHAIN_ID, BROADCAST_TX, ANCHOR_ON_WRITE
+from chain import (
+    sign_update_ETH_price,
+    rpc_call_with_failover,
+    get_business_chain_status,
+    get_auth_chain_status,
+    _chain,
+)
+from config import (
+    ANCHOR_ON_WRITE,
+    APP_ID,
+    APP_VERSION_ID,
+    APP_WALLET_PROOF_TTL_SECONDS,
+    AUTH_CHAIN_ID,
+    BUSINESS_CHAIN_ID,
+    BUSINESS_CHAIN_NAME,
+    CONTRACT_ADDRESS,
+    NOVA_APP_REGISTRY_ADDRESS,
+    BROADCAST_TX,
+    S3_ENCRYPTION_MODE,
+)
+from kms_client import NovaKmsClient, PlatformApiError
 
 # Type hint for Odyn (actual import would cause circular dependency)
 if TYPE_CHECKING:
@@ -54,6 +73,7 @@ logger = logging.getLogger("nova-app.routes")
 # =============================================================================
 app_state: Optional[dict] = None
 odyn: Optional["Odyn"] = None
+kms_client: Optional[NovaKmsClient] = None
 
 
 def init(state_ref: dict, odyn_ref: "Odyn"):
@@ -66,10 +86,58 @@ def init(state_ref: dict, odyn_ref: "Odyn"):
         state_ref: Reference to app_state dict
         odyn_ref: Reference to Odyn instance
     """
-    global app_state, odyn
+    global app_state, odyn, kms_client
     app_state = state_ref
     odyn = odyn_ref
+    kms_client = NovaKmsClient(endpoint=odyn_ref.endpoint)
     logger.info("Routes module initialized")
+
+
+def _require_kms_client() -> NovaKmsClient:
+    if not kms_client:
+        raise HTTPException(status_code=500, detail="KMS client not initialized")
+    return kms_client
+
+
+def _raise_platform_error(err: PlatformApiError) -> None:
+    # Keep user-actionable statuses intact; map transient upstream failures to 502.
+    passthrough = {400, 401, 403, 404}
+    status_code = err.status_code if err.status_code in passthrough else 502
+    raise HTTPException(
+        status_code=status_code,
+        detail={
+            "path": err.path,
+            "status_code": err.status_code,
+            "message": err.detail,
+        },
+    )
+
+
+def _resolve_tx_signer() -> Tuple[str, str, Callable[[Dict[str, Any]], Dict[str, Any]]]:
+    """
+    Prefer app-wallet signer for business txs; gracefully fall back to TEE wallet signer.
+    """
+    if not odyn:
+        raise HTTPException(status_code=500, detail="Odyn not initialized")
+
+    tee_wallet_address = Web3.to_checksum_address(odyn.eth_address())
+
+    try:
+        client = _require_kms_client()
+        app_wallet_info = client.app_wallet_address()
+        app_wallet_address = Web3.to_checksum_address(app_wallet_info["address"])
+
+        def _app_wallet_signer(tx: Dict[str, Any]) -> Dict[str, Any]:
+            return client.app_wallet_sign_tx({"payload": tx, "include_attestation": False})
+
+        return "app_wallet", app_wallet_address, _app_wallet_signer
+    except Exception as exc:
+        logger.warning("App-wallet signer unavailable, using TEE signer: %s", exc)
+
+    def _tee_signer(tx: Dict[str, Any]) -> Dict[str, Any]:
+        return odyn.sign_tx(tx)
+
+    return "tee_wallet", tee_wallet_address, _tee_signer
 
 
 # =============================================================================
@@ -118,6 +186,39 @@ class EncryptedPayload(BaseModel):
     nonce: str
     public_key: str
     data: str
+
+
+class KmsDeriveRequest(BaseModel):
+    path: str
+    context: str = ""
+    length: int = 32
+
+
+class KmsKvGetRequest(BaseModel):
+    key: str
+
+
+class KmsKvPutRequest(BaseModel):
+    key: str
+    value: str
+    ttl_ms: int = 0
+
+
+class KmsKvDeleteRequest(BaseModel):
+    key: str
+
+
+class AppWalletSignRequest(BaseModel):
+    message: str
+
+
+class AppWalletProofRequest(BaseModel):
+    app_id: Optional[int] = None
+    version_id: Optional[int] = None
+    tee_wallet_address: Optional[str] = None
+    registry_address: Optional[str] = None
+    chain_id: Optional[int] = None
+    deadline: Optional[int] = None
 
 
 # =============================================================================
@@ -323,6 +424,144 @@ def get_random():
 
 
 # =============================================================================
+# Multi-Chain + KMS/App-Wallet Endpoints
+# =============================================================================
+
+@router.get("/chains")
+def get_chain_status():
+    """
+    Return chain topology used by the template:
+    - auth chain: registry/KMS authorization
+    - business chain: app logic + contract writes (Ethereum mainnet default)
+    """
+    business = get_business_chain_status()
+    auth = get_auth_chain_status()
+    return {
+        "auth_chain": auth,
+        "business_chain": business,
+        "business_chain_name": BUSINESS_CHAIN_NAME,
+    }
+
+
+@router.get("/storage/config")
+def get_storage_config():
+    """
+    Surface storage encryption expectations for quick diagnostics.
+    """
+    return {
+        "s3_encryption_mode": S3_ENCRYPTION_MODE,
+        "kms_required": S3_ENCRYPTION_MODE == "kms",
+        "anchor_on_write": ANCHOR_ON_WRITE,
+    }
+
+
+@router.post("/kms/derive")
+def kms_derive(req: KmsDeriveRequest):
+    client = _require_kms_client()
+    try:
+        return client.derive(path=req.path, context=req.context, length=req.length)
+    except PlatformApiError as err:
+        _raise_platform_error(err)
+
+
+@router.post("/kms/kv/get")
+def kms_kv_get(req: KmsKvGetRequest):
+    client = _require_kms_client()
+    try:
+        return client.kv_get(key=req.key)
+    except PlatformApiError as err:
+        _raise_platform_error(err)
+
+
+@router.post("/kms/kv/put")
+def kms_kv_put(req: KmsKvPutRequest):
+    client = _require_kms_client()
+    try:
+        return client.kv_put(key=req.key, value=req.value, ttl_ms=req.ttl_ms)
+    except PlatformApiError as err:
+        _raise_platform_error(err)
+
+
+@router.post("/kms/kv/delete")
+def kms_kv_delete(req: KmsKvDeleteRequest):
+    client = _require_kms_client()
+    try:
+        return client.kv_delete(key=req.key)
+    except PlatformApiError as err:
+        _raise_platform_error(err)
+
+
+@router.get("/app-wallet/address")
+def app_wallet_address():
+    client = _require_kms_client()
+    try:
+        return client.app_wallet_address()
+    except PlatformApiError as err:
+        _raise_platform_error(err)
+
+
+@router.post("/app-wallet/sign")
+def app_wallet_sign(req: AppWalletSignRequest):
+    client = _require_kms_client()
+    try:
+        return client.app_wallet_sign(message=req.message)
+    except PlatformApiError as err:
+        _raise_platform_error(err)
+
+
+@router.post("/app-wallet/proof")
+def app_wallet_proof(req: AppWalletProofRequest):
+    client = _require_kms_client()
+    if not odyn:
+        raise HTTPException(status_code=500, detail="Odyn not initialized")
+
+    app_id = req.app_id if req.app_id is not None else APP_ID
+    version_id = req.version_id if req.version_id is not None else APP_VERSION_ID
+    if app_id <= 0 or version_id <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="app_id and version_id must be provided (or set APP_ID/APP_VERSION_ID in config.py)",
+        )
+
+    try:
+        tee_wallet_address = req.tee_wallet_address or Web3.to_checksum_address(odyn.eth_address())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to resolve tee wallet address: {exc}")
+
+    registry_address = req.registry_address or NOVA_APP_REGISTRY_ADDRESS
+    chain_id = req.chain_id if req.chain_id is not None else AUTH_CHAIN_ID
+    deadline = req.deadline
+    if deadline is None:
+        deadline = int(datetime.now(tz=timezone.utc).timestamp()) + APP_WALLET_PROOF_TTL_SECONDS
+
+    try:
+        return client.app_wallet_proof(
+            app_id=app_id,
+            version_id=version_id,
+            tee_wallet_address=tee_wallet_address,
+            registry_address=registry_address,
+            chain_id=chain_id,
+            deadline=deadline,
+        )
+    except PlatformApiError as err:
+        _raise_platform_error(err)
+
+
+@router.post("/app-wallet/proof/default")
+def app_wallet_proof_default():
+    return app_wallet_proof(AppWalletProofRequest())
+
+
+@router.post("/app-wallet/sign-tx")
+def app_wallet_sign_tx(payload: Dict[str, Any] = Body(...)):
+    client = _require_kms_client()
+    try:
+        return client.app_wallet_sign_tx(payload=payload)
+    except PlatformApiError as err:
+        _raise_platform_error(err)
+
+
+# =============================================================================
 # S3 Storage Demo
 # =============================================================================
 
@@ -363,39 +602,48 @@ def save_to_storage(req: StorageRequest):
         result: Dict[str, Any] = {
             "success": success,
             "key": req.key,
-            "message": "Data saved to S3 storage"
+            "message": "Data saved to S3 storage",
+            "s3_encryption_mode": S3_ENCRYPTION_MODE,
         }
 
-        # Anchor state hash on-chain for user_settings key
-        if success and req.key == "user_settings":
+        # Anchor state hash on-chain for user_settings key when enabled.
+        if success and ANCHOR_ON_WRITE and req.key == "user_settings":
             anchor_status: Dict[str, Any] = {}
 
             if not CONTRACT_ADDRESS:
                 anchor_status["anchor_skipped"] = True
                 anchor_status["anchor_note"] = "App contract not configured (CONTRACT_ADDRESS is empty)"
             else:
-                # Get TEE address
+                # Resolve tx signer (app wallet preferred, tee wallet fallback).
                 try:
+                    signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
                     tee_address = Web3.to_checksum_address(odyn.eth_address())
                     anchor_status["tee_address"] = tee_address
+                    anchor_status["tx_signer"] = signer_kind
+                    anchor_status["signer_address"] = signer_address
                 except Exception as e:
-                    anchor_status["anchor_error"] = f"Failed to get TEE wallet address: {e}"
-                    anchor_status["error_type"] = "tee_address_unavailable"
+                    anchor_status["anchor_error"] = f"Failed to resolve transaction signer: {e}"
+                    anchor_status["error_type"] = "tx_signer_unavailable"
                     result.update(anchor_status)
                     return result
 
-                # Check TEE wallet balance
+                # Check signer balance for gas.
                 try:
                     from chain import _chain
-                    balance_eth = _chain.get_balance_eth(tee_address)
-                    anchor_status["tee_balance_eth"] = balance_eth
+                    balance_eth = _chain.get_balance_eth(signer_address)
+                    anchor_status["signer_balance_eth"] = balance_eth
+                    if signer_kind == "tee_wallet":
+                        anchor_status["tee_balance_eth"] = balance_eth
                     if balance_eth == 0:
-                        anchor_status["anchor_error"] = f"TEE wallet {tee_address} has no funds. Please send some ETH to cover gas."
-                        anchor_status["error_type"] = "tee_wallet_no_funds"
+                        anchor_status["anchor_error"] = (
+                            f"{signer_kind} signer {signer_address} has no funds. "
+                            "Please fund the signer to cover gas."
+                        )
+                        anchor_status["error_type"] = "tx_signer_no_funds"
                         result.update(anchor_status)
                         return result
                 except Exception as e:
-                    logger.warning(f"Failed to check TEE wallet balance: {e}")
+                    logger.warning(f"Failed to check signer balance: {e}")
                     anchor_status["balance_check_error"] = str(e)
 
                 # Compute state hash (use normalized store_value, not raw req.value)
@@ -408,9 +656,12 @@ def save_to_storage(req: StorageRequest):
                     anchor = sign_update_state_hash(
                         odyn=odyn,
                         contract_address=CONTRACT_ADDRESS,
-                        chain_id=CHAIN_ID,
+                        chain_id=BUSINESS_CHAIN_ID,
                         state_hash=state_hash,
                         broadcast=BROADCAST_TX,
+                        sign_tx_fn=sign_tx_fn,
+                        sender_address=signer_address,
+                        signer_kind=signer_kind,
                     )
                     anchor_status["anchor_tx"] = anchor
                     anchor_status["broadcast"] = BROADCAST_TX
@@ -424,13 +675,13 @@ def save_to_storage(req: StorageRequest):
                     anchor_status["anchor_error"] = str(e)
                     if "insufficient funds" in error_str or "doesn't have enough funds" in error_str:
                         anchor_status["error_type"] = "insufficient_funds"
-                        anchor_status["hint"] = f"TEE wallet {tee_address} does not have enough ETH for gas."
+                        anchor_status["hint"] = f"{signer_kind} signer {signer_address} does not have enough ETH for gas."
                     elif "nonce" in error_str:
                         anchor_status["error_type"] = "nonce_issue"
                         anchor_status["hint"] = "Transaction nonce conflict. A previous tx may be pending."
                     elif "execution reverted" in error_str:
                         anchor_status["error_type"] = "execution_reverted"
-                        anchor_status["hint"] = "Contract call reverted. Check if TEE wallet is registered and authorized."
+                        anchor_status["hint"] = "Contract call reverted. Check signer authorization in your business contract."
                     else:
                         anchor_status["error_type"] = "sign_or_broadcast_failed"
 
@@ -464,7 +715,8 @@ def load_from_storage(key: str):
 
         result: Dict[str, Any] = {
             "key": key,
-            "value": value
+            "value": value,
+            "s3_encryption_mode": S3_ENCRYPTION_MODE,
         }
 
         # Verify user_settings key against on-chain state hash
@@ -521,7 +773,8 @@ def list_storage():
             "keys": keys,
             "count": len(keys),
             "continuation_token": res.get("continuation_token") if isinstance(res, dict) else None,
-            "is_truncated": res.get("is_truncated") if isinstance(res, dict) else False
+            "is_truncated": res.get("is_truncated") if isinstance(res, dict) else False,
+            "s3_encryption_mode": S3_ENCRYPTION_MODE,
         }
     except Exception as e:
         logger.error(f"Failed to list storage: {e}")
@@ -546,7 +799,8 @@ def delete_from_storage(key: str):
         return {
             "success": success,
             "key": key,
-            "message": f"Key deleted from S3 storage"
+            "message": f"Key deleted from S3 storage",
+            "s3_encryption_mode": S3_ENCRYPTION_MODE,
         }
     except Exception as e:
         logger.error(f"Failed to delete from storage: {e}")
@@ -582,7 +836,8 @@ def read_contract():
     return {
         "contract_address": CONTRACT_ADDRESS,
         "rpc_url": _chain.endpoint,
-        "chain_id": CHAIN_ID,
+        "chain_name": BUSINESS_CHAIN_NAME,
+        "chain_id": BUSINESS_CHAIN_ID,
         "tee_address": Web3.to_checksum_address(odyn.eth_address()) if odyn else None,
         "note": "Full contract read requires web3.py integration"
     }
@@ -593,7 +848,8 @@ def update_contract_state(req: ContractWriteRequest):
     """
     Update state hash on the NovaAppBase contract.
     
-    This signs a transaction with the TEE's key and returns the raw tx.
+    This signs a transaction (app wallet preferred, TEE wallet fallback)
+    and returns the raw tx.
     The transaction can be submitted via any RPC endpoint.
     
     Note: For full implementation, add web3.py for nonce/gas estimation.
@@ -608,18 +864,23 @@ def update_contract_state(req: ContractWriteRequest):
         )
     
     try:
+        signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
         signed = sign_update_state_hash(
             odyn=odyn,
             contract_address=CONTRACT_ADDRESS,
-            chain_id=CHAIN_ID,
+            chain_id=BUSINESS_CHAIN_ID,
             state_hash=req.state_hash,
             broadcast=BROADCAST_TX,
+            sign_tx_fn=sign_tx_fn,
+            sender_address=signer_address,
+            signer_kind=signer_kind,
         )
         return {
             "success": True,
             "raw_transaction": signed["raw_transaction"],
             "transaction_hash": signed["transaction_hash"],
             "from_address": signed["address"],
+            "tx_signer": signer_kind,
             "to_address": CONTRACT_ADDRESS,
             "broadcasted": signed.get("broadcasted"),
             "rpc_tx_hash": signed.get("rpc_tx_hash"),
@@ -656,29 +917,32 @@ def update_oracle_price_now():
             },
         )
 
-    # Get TEE address
+    # Resolve tx signer (app wallet preferred, tee wallet fallback).
     try:
+        signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
         tee_address = Web3.to_checksum_address(odyn.eth_address())
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail={
-                "error": "tee_address_unavailable",
-                "message": f"Failed to get TEE wallet address: {e}",
+                "error": "tx_signer_unavailable",
+                "message": f"Failed to resolve tx signer: {e}",
             },
         )
 
-    # Check TEE wallet balance
+    # Check signer balance
     try:
-        balance_hex = _rpc_call("eth_getBalance", [tee_address, "latest"])
+        balance_hex = _rpc_call("eth_getBalance", [signer_address, "latest"])
         balance_wei = int(balance_hex, 16)
         balance_eth = balance_wei / 1e18
         if balance_wei == 0:
             raise HTTPException(
                 status_code=400,
                 detail={
-                    "error": "tee_wallet_no_funds",
-                    "message": f"TEE wallet {tee_address} has no funds. Please send some ETH to cover gas.",
+                    "error": "tx_signer_no_funds",
+                    "message": f"{signer_kind} signer {signer_address} has no funds. Please send ETH to cover gas.",
+                    "tx_signer": signer_kind,
+                    "signer_address": signer_address,
                     "tee_address": tee_address,
                     "balance_wei": balance_wei,
                 },
@@ -686,7 +950,7 @@ def update_oracle_price_now():
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning(f"Failed to check TEE wallet balance: {e}")
+        logger.warning(f"Failed to check signer balance: {e}")
         balance_eth = None
 
     # Fetch ETH price
@@ -713,30 +977,35 @@ def update_oracle_price_now():
         signed = sign_update_ETH_price(
             odyn=odyn,
             contract_address=CONTRACT_ADDRESS,
-            chain_id=CHAIN_ID,
+            chain_id=BUSINESS_CHAIN_ID,
             request_id=0,
             price_usd=price_usd,
             updated_at=updated_at,
             broadcast=BROADCAST_TX,
+            sign_tx_fn=sign_tx_fn,
+            sender_address=signer_address,
+            signer_kind=signer_kind,
         )
     except Exception as e:
         error_str = str(e).lower()
         detail: Dict[str, Any] = {
             "error": "sign_or_broadcast_failed",
             "message": str(e),
+            "tx_signer": signer_kind,
+            "signer_address": signer_address,
             "tee_address": tee_address,
             "contract_address": CONTRACT_ADDRESS,
         }
         # Try to detect common issues
         if "insufficient funds" in error_str or "doesn't have enough funds" in error_str:
             detail["error"] = "insufficient_funds"
-            detail["hint"] = f"TEE wallet {tee_address} does not have enough ETH for gas."
+            detail["hint"] = f"{signer_kind} signer {signer_address} does not have enough ETH for gas."
         elif "nonce" in error_str:
             detail["error"] = "nonce_issue"
             detail["hint"] = "Transaction nonce conflict. A previous tx may be pending."
         elif "execution reverted" in error_str:
             detail["error"] = "execution_reverted"
-            detail["hint"] = "Contract call reverted. Check if TEE wallet is registered and authorized."
+            detail["hint"] = "Contract call reverted. Check signer authorization in your business contract."
         raise HTTPException(status_code=500, detail=detail)
 
     # Check broadcast result
@@ -746,6 +1015,8 @@ def update_oracle_price_now():
             detail={
                 "error": "broadcast_failed",
                 "message": signed.get("broadcast_error", "Unknown broadcast error"),
+                "tx_signer": signer_kind,
+                "signer_address": signer_address,
                 "tee_address": tee_address,
                 "contract_address": CONTRACT_ADDRESS,
                 "raw_transaction": signed.get("raw_transaction"),
@@ -758,12 +1029,16 @@ def update_oracle_price_now():
         oracle_state["last_updated_at"] = updated_at
         oracle_state["last_reason"] = "api"
         oracle_state["last_tx"] = signed
+        oracle_state["last_tx_signer"] = signer_kind
 
     return {
         "success": True,
         "contract_address": CONTRACT_ADDRESS,
+        "tx_signer": signer_kind,
+        "signer_address": signer_address,
         "tee_address": tee_address,
-        "tee_balance_eth": balance_eth,
+        "signer_balance_eth": balance_eth,
+        "tee_balance_eth": balance_eth if signer_kind == "tee_wallet" else None,
         "price_usd": price_usd,
         "updated_at": updated_at,
         "tx": signed,
@@ -969,27 +1244,30 @@ def handle_pending_requests(lookback: int = 1000):
             "results": [],
         }
 
-    # Get TEE address and balance
+    # Resolve signer once per batch (app wallet preferred, tee wallet fallback).
     try:
+        signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
         tee_address = Web3.to_checksum_address(odyn.eth_address())
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail={
-                "error": "tee_address_unavailable",
-                "message": f"Failed to get TEE wallet address: {e}",
+                "error": "tx_signer_unavailable",
+                "message": f"Failed to resolve tx signer: {e}",
             },
         )
 
     try:
-        balance_hex = _rpc_call("eth_getBalance", [tee_address, "latest"])
+        balance_hex = _rpc_call("eth_getBalance", [signer_address, "latest"])
         balance_wei = int(balance_hex, 16)
         if balance_wei == 0:
             raise HTTPException(
                 status_code=400,
                 detail={
-                    "error": "tee_wallet_no_funds",
-                    "message": f"TEE wallet {tee_address} has no funds.",
+                    "error": "tx_signer_no_funds",
+                    "message": f"{signer_kind} signer {signer_address} has no funds.",
+                    "tx_signer": signer_kind,
+                    "signer_address": signer_address,
                     "tee_address": tee_address,
                 },
             )
@@ -1024,11 +1302,14 @@ def handle_pending_requests(lookback: int = 1000):
             signed = sign_update_ETH_price(
                 odyn=odyn,
                 contract_address=CONTRACT_ADDRESS,
-                chain_id=CHAIN_ID,
+                chain_id=BUSINESS_CHAIN_ID,
                 request_id=request_id,
                 price_usd=price_usd,
                 updated_at=updated_at,
                 broadcast=BROADCAST_TX,
+                sign_tx_fn=sign_tx_fn,
+                sender_address=signer_address,
+                signer_kind=signer_kind,
             )
 
             # Mark as handled
@@ -1044,6 +1325,8 @@ def handle_pending_requests(lookback: int = 1000):
                 "price_usd": price_usd,
                 "tx_hash": signed.get("transaction_hash"),
                 "broadcasted": signed.get("broadcasted"),
+                "tx_signer": signer_kind,
+                "signer_address": signer_address,
             })
         except Exception as e:
             results.append({
@@ -1055,6 +1338,8 @@ def handle_pending_requests(lookback: int = 1000):
     return {
         "processed_count": len(pending),
         "price_usd": price_usd,
+        "tx_signer": signer_kind,
+        "signer_address": signer_address,
         "tee_address": tee_address,
         "results": results,
     }
@@ -1101,4 +1386,3 @@ def get_event_monitor_status():
 # def your_endpoint(req: YourRequestModel):
 #     """Your custom logic here."""
 #     pass
-
