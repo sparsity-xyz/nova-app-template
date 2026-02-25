@@ -43,6 +43,7 @@ from chain import compute_state_hash, sign_update_state_hash, get_onchain_state_
 from chain import (
     sign_update_ETH_price,
     rpc_call_with_failover,
+    auth_chain_rpc_url,
     get_business_chain_status,
     get_auth_chain_status,
     _chain,
@@ -58,7 +59,13 @@ from config import (
     CONTRACT_ADDRESS,
     NOVA_APP_REGISTRY_ADDRESS,
     BROADCAST_TX,
+    AUTH_CHAIN_LOCAL_RPC_URL,
+    BUSINESS_CHAIN_LOCAL_RPC_URL,
     S3_ENCRYPTION_MODE,
+    S3_ENCRYPTION_KEY_SCOPE,
+    S3_ENCRYPTION_AAD_MODE,
+    S3_ENCRYPTION_KEY_VERSION,
+    S3_ENCRYPTION_ACCEPT_PLAINTEXT,
 )
 from kms_client import NovaKmsClient, PlatformApiError
 
@@ -439,6 +446,11 @@ def get_chain_status():
     return {
         "auth_chain": auth,
         "business_chain": business,
+        "multi_chain_enabled": True,
+        "auth_chain_local_rpc_url": AUTH_CHAIN_LOCAL_RPC_URL,
+        "business_chain_local_rpc_url": BUSINESS_CHAIN_LOCAL_RPC_URL,
+        "auth_chain_active_rpc_url": auth_chain_rpc_url(),
+        "business_chain_active_rpc_url": _chain.endpoint,
         "business_chain_name": BUSINESS_CHAIN_NAME,
     }
 
@@ -451,7 +463,75 @@ def get_storage_config():
     return {
         "s3_encryption_mode": S3_ENCRYPTION_MODE,
         "kms_required": S3_ENCRYPTION_MODE == "kms",
+        "key_scope": S3_ENCRYPTION_KEY_SCOPE,
+        "aad_mode": S3_ENCRYPTION_AAD_MODE,
+        "key_version": S3_ENCRYPTION_KEY_VERSION,
+        "accept_plaintext": S3_ENCRYPTION_ACCEPT_PLAINTEXT,
         "anchor_on_write": ANCHOR_ON_WRITE,
+    }
+
+
+@router.get("/enclaver/features")
+def get_enclaver_feature_snapshot():
+    """
+    Snapshot for the four core enclaver capabilities used by this template:
+    1) multi-chain auth/business routing
+    2) S3 encryption configuration
+    3) app-wallet availability
+    4) KMS derive + KV endpoint availability
+    """
+    chain_status = get_chain_status()
+    storage_status = get_storage_config()
+
+    app_wallet: Dict[str, Any] = {
+        "enabled": False,
+        "address": None,
+        "error": None,
+    }
+    kms: Dict[str, Any] = {
+        "enabled": False,
+        "probe": None,
+        "error": None,
+    }
+
+    try:
+        client = _require_kms_client()
+
+        # App wallet probe
+        try:
+            addr_res = client.app_wallet_address()
+            app_wallet["enabled"] = True
+            app_wallet["address"] = addr_res.get("address")
+            app_wallet["raw"] = addr_res
+        except Exception as app_exc:
+            app_wallet["error"] = str(app_exc)
+
+        # KMS probe (non-persistent derive call)
+        try:
+            derive_res = client.derive(
+                path="app/template/enclaver-feature-probe",
+                context="snapshot",
+                length=16,
+            )
+            kms["enabled"] = True
+            kms["probe"] = {
+                "path": "app/template/enclaver-feature-probe",
+                "length": 16,
+                "result": derive_res,
+            }
+        except Exception as kms_exc:
+            kms["error"] = str(kms_exc)
+    except Exception as exc:
+        app_wallet["error"] = str(exc)
+        kms["error"] = str(exc)
+
+    return {
+        "features": {
+            "multiple_chain_support": chain_status,
+            "s3_encryption_support": storage_status,
+            "app_wallet_support": app_wallet,
+            "kms_support": kms,
+        }
     }
 
 

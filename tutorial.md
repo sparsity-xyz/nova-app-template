@@ -30,21 +30,30 @@ make dev-backend
 Open:
 - `http://localhost:8000/frontend/`
 
+For enclave packaging (uses `sources.app: "nova-app-template:latest"` in `enclaver.yaml`):
+
+```bash
+make build-docker
+make build-enclave
+```
+
 ## 4. Configure enclave runtime (`enclaver.yaml`)
 
 Required edits before real deployment:
 
 1. `kms_integration.kms_app_id`
-2. `kms_integration.base_urls`
+2. `kms_integration.nova_app_registry`
 3. `storage.s3.bucket`
 4. `storage.s3.prefix`
-5. `helios_rpc.execution_rpc`
+5. `helios_rpc.chains[*].execution_rpc`
 
 The template already sets:
 - `kms_integration.enabled: true`
+- `kms_integration.use_app_wallet: true`
 - `storage.s3.encryption.mode: kms`
-- `helios_rpc.kind: ethereum`
-- `helios_rpc.network: mainnet`
+- `helios_rpc.enabled: true`
+- `helios_rpc.chains[0]` = Base Sepolia (`local_rpc_port=18545`) for auth-chain registry discovery
+- `helios_rpc.chains[1]` = Ethereum Mainnet (`local_rpc_port=18546`) for business logic
 
 ## 5. Configure app constants (`enclave/config.py`)
 
@@ -110,7 +119,7 @@ cast send "$APP_CONTRACT" "setAppWalletAddress(address)" "$APP_WALLET" --rpc-url
 
 ## 8. Validate from frontend
 
-In `KMS & App Wallet` tab:
+In `Enclaver Features` tab:
 
 1. Run `Check Chain Topology` (`/api/chains`) and confirm:
    - auth chain = Base Sepolia
@@ -118,13 +127,16 @@ In `KMS & App Wallet` tab:
 2. Run `Check S3 Encryption Config` (`/api/storage/config`) and confirm mode is `kms`.
 3. Test `KMS Derive` and `KV Put/Get/Delete`.
 4. Run `Get Address` and `Build Default Proof` for app wallet.
+5. Run `Run Full Enclaver Demo` for end-to-end smoke verification across all four capabilities.
 
 If proof fails with missing app metadata, set `APP_ID` and `APP_VERSION_ID` in `enclave/config.py`.
 
 ## 9. Common issues
 
 - `KMS integration not configured`
-  - Check `kms_integration.enabled=true` and `base_urls` are valid URLs.
+  - Check `kms_integration.enabled=true`, `kms_app_id`, and `nova_app_registry`.
+- `KMS registry mode validation failed at startup`
+  - Ensure `helios_rpc.enabled=true` and one chain has `local_rpc_port: 18545`.
 - `storage.s3.encryption.mode=kms` startup failure
   - Ensure KMS integration is enabled.
 - `app_wallet proof` failure

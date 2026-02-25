@@ -19,6 +19,13 @@ interface ApiResponse {
     type?: string;
 }
 
+interface FeatureDemoStep {
+    title: string;
+    ok: boolean;
+    message: string;
+    responseType: string;
+}
+
 // Business-chain explorer (default business chain is Ethereum mainnet)
 const ETHERSCAN_URL = 'https://etherscan.io';
 const addressLink = (addr: string) => `${ETHERSCAN_URL}/address/${addr}`;
@@ -65,6 +72,8 @@ export default function Home() {
     const [eventMonitorData, setEventMonitorData] = useState<any>(null);
     const [eventMonitorLoading, setEventMonitorLoading] = useState(false);
     const [eventMonitorError, setEventMonitorError] = useState<string | null>(null);
+    const [featureDemoRunning, setFeatureDemoRunning] = useState(false);
+    const [featureDemoSteps, setFeatureDemoSteps] = useState<FeatureDemoStep[]>([]);
 
     // Connection mode state
     const [connectionMode, setConnectionMode] = useState<'registry' | 'direct'>('registry');
@@ -252,6 +261,95 @@ export default function Home() {
         }
     };
 
+    const getErrorMessage = (error: any): string => {
+        const detail = error?.detail;
+        if (typeof detail === 'string') return detail;
+        if (detail?.message) return detail.message;
+        if (detail?.error) return detail.error;
+        return error instanceof Error ? error.message : 'Request failed';
+    };
+
+    const runEnclaverDemo = async () => {
+        if (!status.connected || featureDemoRunning) return;
+
+        setFeatureDemoRunning(true);
+        setLoading(true);
+        setLastResponseKey('enclaver');
+        setResponsesByTab(prev => ({ ...prev, enclaver: null }));
+
+        const steps: FeatureDemoStep[] = [];
+        const outputs: Record<string, any> = {};
+
+        const runStep = async (
+            title: string,
+            path: string,
+            method: 'GET' | 'POST' = 'GET',
+            body?: any
+        ) => {
+            try {
+                const data = await client.call(path, method, body);
+                outputs[path] = data;
+                steps.push({
+                    title,
+                    ok: true,
+                    message: 'OK',
+                    responseType: path,
+                });
+            } catch (error: any) {
+                const message = getErrorMessage(error);
+                outputs[path] = {
+                    error: message,
+                    detail: error?.detail ?? null,
+                };
+                steps.push({
+                    title,
+                    ok: false,
+                    message,
+                    responseType: path,
+                });
+            }
+        };
+
+        try {
+            await runStep('Feature snapshot', '/api/enclaver/features', 'GET');
+            await runStep('Multiple chain support', '/api/chains', 'GET');
+            await runStep('S3 encryption config', '/api/storage/config', 'GET');
+            await runStep('App wallet address', '/api/app-wallet/address', 'GET');
+            await runStep('KMS derive', '/api/kms/derive', 'POST', {
+                path: kmsDerivePath,
+                context: kmsDeriveContext,
+                length: kmsDeriveLength,
+            });
+            await runStep('KMS KV put', '/api/kms/kv/put', 'POST', {
+                key: kmsKvKey,
+                value: kmsKvValue,
+                ttl_ms: 0,
+            });
+            await runStep('KMS KV get', '/api/kms/kv/get', 'POST', {
+                key: kmsKvKey,
+            });
+            await runStep('KMS KV delete', '/api/kms/kv/delete', 'POST', {
+                key: kmsKvKey,
+            });
+        } finally {
+            setFeatureDemoSteps(steps);
+            setResponsesByTab(prev => ({
+                ...prev,
+                enclaver: {
+                    success: steps.every((s) => s.ok),
+                    type: '/api/enclaver/demo',
+                    data: {
+                        executed_at: new Date().toISOString(),
+                        steps,
+                        outputs,
+                    },
+                },
+            }));
+            setLoading(false);
+            setFeatureDemoRunning(false);
+        }
+    };
+
     const callEchoEncrypted = async () => {
         setLoading(true);
         setResponsesByTab(prev => ({ ...prev, 'secure-echo': null }));
@@ -341,7 +439,7 @@ export default function Home() {
                             <h1 className="text-3xl font-semibold text-slate-900 mt-2">
                                 🛡️ Nova App Template
                             </h1>
-                            <p className="text-slate-500 mt-2">Secure, verifiable TEE apps with TLS, S3, and on‑chain trust.</p>
+                            <p className="text-slate-500 mt-2">Secure, verifiable TEE apps with multi-chain routing, KMS, app-wallet, and S3 encryption.</p>
                         </div>
 
                         <div className="min-w-[400px] flex-1 max-w-xl">
@@ -525,6 +623,7 @@ export default function Home() {
                         <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">TLS</span>
                         <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">S3 Storage</span>
                         <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">KMS/App Wallet</span>
+                        <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">Enclaver Features</span>
                         <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">Oracles</span>
                         <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">Dual Chain</span>
                         <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">Event Listener</span>
@@ -542,6 +641,7 @@ export default function Home() {
                                 { id: 'identity', label: 'Identity & TLS', icon: '🔑' },
                                 { id: 'secure-echo', label: 'Secure Echo', icon: '🔒' },
                                 { id: 'storage', label: 'S3 Storage', icon: '📦' },
+                                { id: 'enclaver', label: 'Enclaver Features', icon: '🧩' },
                                 { id: 'kms-wallet', label: 'KMS & App Wallet', icon: '🗝️' },
                                 { id: 'oracle', label: 'Oracle Demo', icon: '🌐' },
                                 { id: 'events', label: 'Event Monitor', icon: '📊' },
@@ -993,6 +1093,156 @@ export default function Home() {
                                                     )}
                                                 </div>
                                             )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activeTab === 'enclaver' && (
+                            <div className="space-y-6">
+                                <h2 className="text-xl font-semibold mb-4">Enclaver Features</h2>
+                                <p className="text-slate-600 text-sm leading-relaxed mb-6">
+                                    Validate the latest enclaver capabilities in one place:
+                                    multi-chain auth/business routing, S3 encryption, app wallet, and Nova KMS derive/KV.
+                                </p>
+
+                                <div className="flex flex-wrap gap-3">
+                                    <button
+                                        onClick={() => callApi('/api/enclaver/features', 'GET', undefined, false, 'enclaver')}
+                                        disabled={loading || !status.connected}
+                                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-semibold text-sm disabled:opacity-50"
+                                    >
+                                        Refresh Feature Snapshot
+                                    </button>
+                                    <button
+                                        onClick={runEnclaverDemo}
+                                        disabled={loading || featureDemoRunning || !status.connected}
+                                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold text-sm disabled:opacity-50"
+                                    >
+                                        {featureDemoRunning ? 'Running Demo...' : 'Run Full Enclaver Demo'}
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-3">
+                                        <h3 className="text-sm font-semibold text-slate-800">1) Multiple Chain Support</h3>
+                                        <p className="text-xs text-slate-600">
+                                            Validate auth chain (registry/KMS) and business chain routing.
+                                        </p>
+                                        <button
+                                            onClick={() => callApi('/api/chains', 'GET', undefined, false, 'enclaver')}
+                                            disabled={loading || !status.connected}
+                                            className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                                        >
+                                            Check Chain Topology
+                                        </button>
+                                    </div>
+
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-3">
+                                        <h3 className="text-sm font-semibold text-slate-800">2) S3 Encryption Support</h3>
+                                        <p className="text-xs text-slate-600">
+                                            Inspect expected S3 encryption mode and key derivation metadata.
+                                        </p>
+                                        <button
+                                            onClick={() => callApi('/api/storage/config', 'GET', undefined, false, 'enclaver')}
+                                            disabled={loading || !status.connected}
+                                            className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                                        >
+                                            Check S3 Encryption Config
+                                        </button>
+                                    </div>
+
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-3">
+                                        <h3 className="text-sm font-semibold text-slate-800">3) App Wallet Support</h3>
+                                        <p className="text-xs text-slate-600">
+                                            Verify app wallet availability and EIP-191 signing path.
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button
+                                                onClick={() => callApi('/api/app-wallet/address', 'GET', undefined, false, 'enclaver')}
+                                                disabled={loading || !status.connected}
+                                                className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                                            >
+                                                Get Address
+                                            </button>
+                                            <button
+                                                onClick={() => callApi('/api/app-wallet/sign', 'POST', { message: appWalletMessage }, false, 'enclaver')}
+                                                disabled={loading || !status.connected}
+                                                className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                                            >
+                                                Sign Message
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-3">
+                                        <h3 className="text-sm font-semibold text-slate-800">4) KMS Service Support</h3>
+                                        <p className="text-xs text-slate-600">
+                                            Run derive key, then exercise KV put/get/delete via Nova KMS.
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button
+                                                onClick={() => callApi('/api/kms/derive', 'POST', {
+                                                    path: kmsDerivePath,
+                                                    context: kmsDeriveContext,
+                                                    length: kmsDeriveLength,
+                                                }, false, 'enclaver')}
+                                                disabled={loading || !status.connected}
+                                                className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                                            >
+                                                Derive Key
+                                            </button>
+                                            <button
+                                                onClick={() => callApi('/api/kms/kv/put', 'POST', { key: kmsKvKey, value: kmsKvValue, ttl_ms: 0 }, false, 'enclaver')}
+                                                disabled={loading || !status.connected}
+                                                className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                                            >
+                                                KV Put
+                                            </button>
+                                            <button
+                                                onClick={() => callApi('/api/kms/kv/get', 'POST', { key: kmsKvKey }, false, 'enclaver')}
+                                                disabled={loading || !status.connected}
+                                                className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                                            >
+                                                KV Get
+                                            </button>
+                                            <button
+                                                onClick={() => callApi('/api/kms/kv/delete', 'POST', { key: kmsKvKey }, false, 'enclaver')}
+                                                disabled={loading || !status.connected}
+                                                className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                                            >
+                                                KV Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {featureDemoSteps.length > 0 && (
+                                    <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                                        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Latest Demo Steps</h3>
+                                        <div className="space-y-2">
+                                            {featureDemoSteps.map((step, idx) => (
+                                                <div
+                                                    key={`${step.responseType}-${idx}`}
+                                                    className={`rounded-lg border px-3 py-2 flex items-center justify-between gap-3 ${step.ok
+                                                        ? 'bg-emerald-50 border-emerald-200'
+                                                        : 'bg-red-50 border-red-200'
+                                                        }`}
+                                                >
+                                                    <div className="min-w-0">
+                                                        <p className={`text-sm font-medium ${step.ok ? 'text-emerald-800' : 'text-red-800'}`}>
+                                                            {step.title}
+                                                        </p>
+                                                        <p className={`text-xs truncate ${step.ok ? 'text-emerald-700' : 'text-red-700'}`}>
+                                                            {step.responseType} • {step.message}
+                                                        </p>
+                                                    </div>
+                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${step.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                                        {step.ok ? 'PASS' : 'FAIL'}
+                                                    </span>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                 )}

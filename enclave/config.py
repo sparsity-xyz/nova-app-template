@@ -19,6 +19,9 @@ from __future__ import annotations
 AUTH_CHAIN_NAME: str = "base-sepolia"
 AUTH_CHAIN_ID: int = 84532
 AUTH_CHAIN_RPC_URL: str = "https://sepolia.base.org"
+# In enclave mode (IN_ENCLAVE=true), this app expects the auth chain Helios
+# instance to be available at this local endpoint (configured in enclaver.yaml).
+AUTH_CHAIN_LOCAL_RPC_URL: str = "http://127.0.0.1:18545"
 
 # Nova App Registry contract used by app-wallet binding proof.
 NOVA_APP_REGISTRY_ADDRESS: str = "0x0f68E6e699f2E972998a1EcC000c7ce103E64cc8"
@@ -32,8 +35,11 @@ NOVA_APP_REGISTRY_ADDRESS: str = "0x0f68E6e699f2E972998a1EcC000c7ce103E64cc8"
 BUSINESS_CHAIN_NAME: str = "ethereum-mainnet"
 BUSINESS_CHAIN_ID: int = 1
 
-# Used outside enclave mode. In enclave mode, app talks to local Helios at 127.0.0.1:8545.
+# Used outside enclave mode.
 BUSINESS_CHAIN_DIRECT_RPC_URL: str = "https://eth.llamarpc.com"
+# In enclave mode (IN_ENCLAVE=true), this app expects the business chain Helios
+# instance to be available at this local endpoint (configured in enclaver.yaml).
+BUSINESS_CHAIN_LOCAL_RPC_URL: str = "http://127.0.0.1:18546"
 
 # Backward-compatible alias used by existing helper functions.
 CHAIN_ID: int = BUSINESS_CHAIN_ID
@@ -52,6 +58,10 @@ ANCHOR_ON_WRITE: bool = True
 # S3 encryption mode expectation.
 # Actual encryption is enforced by `enclaver.yaml` storage.s3.encryption.mode.
 S3_ENCRYPTION_MODE: str = "kms"
+S3_ENCRYPTION_KEY_SCOPE: str = "object"
+S3_ENCRYPTION_AAD_MODE: str = "key"
+S3_ENCRYPTION_KEY_VERSION: str = "v1"
+S3_ENCRYPTION_ACCEPT_PLAINTEXT: bool = True
 
 
 # =============================================================================

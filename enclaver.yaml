@@ -3,7 +3,8 @@ name: "nova-app"
 target: "nova-app:latest"
 
 sources:
-  app: "."
+  # Build first: `make build-docker`
+  app: "nova-app-template:latest"
 
 # Odyn Primary API (full functionality)
 api:
@@ -27,23 +28,14 @@ egress:
     - "0.0.0.0/0"    # All IPv4
     - "::/0"         # All IPv6
 
-# Nova KMS + app wallet integration (auth chain: Base Sepolia)
-# NOTE: Replace `kms_app_id` and `base_urls` with your real deployment values.
+# Nova KMS + App Wallet integration
+# NOTE: `kms_app_id` + `nova_app_registry` enables registry-backed /v1/kms/*.
+# NOTE: `use_app_wallet=true` enables /v1/app-wallet/*.
 kms_integration:
   enabled: true
+  use_app_wallet: true
   kms_app_id: 1001
   nova_app_registry: "0x0f68E6e699f2E972998a1EcC000c7ce103E64cc8"
-  registry_chain_rpc: "https://sepolia.base.org"
-  base_urls:
-    - "https://kms-node-1.example.com"
-    - "https://kms-node-2.example.com"
-  request_timeout_ms: 3000
-  max_retries: 2
-  discovery_ttl_ms: 15000
-  require_mutual_signature: true
-  audit_log_path: "/tmp/nova-kms-audit.jsonl"
-  reserved_derive_prefixes:
-    - "wallet/eth/app/"
 
 # S3 persistent storage
 # NOTE: Nova platform provisions and manages these values during deployment.
@@ -60,21 +52,27 @@ storage:
       key_version: "v1"
       accept_plaintext: true
 
-# Helios trustless RPC for business chain (Ethereum mainnet)
+# Helios trustless multi-chain RPC
+# - 18545 is reserved for auth-chain registry discovery when KMS registry mode is enabled.
+# - 18546 is used by app business logic (default).
 helios_rpc:
   enabled: true
-  kind: ethereum
-  network: mainnet
-  listen_port: 8545
-  # NOTE: execution_rpc is managed/injected by Nova Platform during deployment.
-  # This default is for local enclaver testing.
-  execution_rpc: "https://eth-mainnet.g.alchemy.com/v2/YOUR_API_KEY"
+  chains:
+    - name: "L2-base-sepolia"
+      network_id: "84532"
+      kind: "opstack"
+      network: "base-sepolia"
+      execution_rpc: "https://sepolia.base.org"
+      local_rpc_port: 18545
+    - name: "ethereum-mainnet"
+      network_id: "1"
+      kind: "ethereum"
+      network: "mainnet"
+      # NOTE: Replace with your own mainnet execution RPC.
+      execution_rpc: "https://eth-mainnet.g.alchemy.com/v2/YOUR_API_KEY"
+      local_rpc_port: 18546
 
 # Resource defaults
 defaults:
   cpu_count: 2
   memory_mb: 2048
-
-# TEE Sidecars / Services
-# Add other sidecars here if needed
-services: []

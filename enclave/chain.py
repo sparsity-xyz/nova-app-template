@@ -13,10 +13,12 @@ from eth_hash.auto import keccak
 
 from config import (
     AUTH_CHAIN_ID,
+    AUTH_CHAIN_LOCAL_RPC_URL,
     AUTH_CHAIN_NAME,
     AUTH_CHAIN_RPC_URL,
     BUSINESS_CHAIN_DIRECT_RPC_URL,
     BUSINESS_CHAIN_ID,
+    BUSINESS_CHAIN_LOCAL_RPC_URL,
     BUSINESS_CHAIN_NAME,
 )
 
@@ -28,15 +30,14 @@ CONFIRMATION_DEPTH: int = 6
 class Chain:
     """Helper for interacting with the blockchain via Helios RPC."""
 
-    DEFAULT_HELIOS_RPC = "http://127.0.0.1:8545"
+    DEFAULT_HELIOS_RPC = BUSINESS_CHAIN_LOCAL_RPC_URL
 
     def __init__(self, rpc_url: Optional[str] = None):
         if rpc_url:
             self.endpoint = rpc_url
         else:
-            is_enclave = os.getenv("IN_ENCLAVE", "False").lower() == "true"
-            if is_enclave:
-                # In enclave: always default to the local trustless Helios instance
+            if _in_enclave():
+                # In enclave: use local trustless Helios endpoint for the business chain.
                 self.endpoint = self.DEFAULT_HELIOS_RPC
             else:
                 # Outside enclave: default to Ethereum mainnet public RPC.
@@ -46,7 +47,7 @@ class Chain:
 
     def wait_for_helios(self, timeout: int = 300):
         """Wait for RPC to be ready."""
-        is_enclave = os.getenv("IN_ENCLAVE", "False").lower() == "true"
+        is_enclave = _in_enclave()
         
         start_time = time.time()
         while time.time() - start_time < timeout:
@@ -61,7 +62,7 @@ class Chain:
                     if not syncing:
                         block = self.w3.eth.block_number
                         if block > 0:
-                            logger.info(f"Helios ready at block {block}")
+                            logger.info(f"Business-chain Helios ready at block {block} ({self.endpoint})")
                             return True
                 logger.info(f"Waiting for {'Helios' if is_enclave else 'business'} RPC...")
             except Exception:
@@ -122,6 +123,28 @@ _chain = Chain()
 def wait_for_helios(timeout: int = 300):
     return _chain.wait_for_helios(timeout)
 
+
+def _in_enclave() -> bool:
+    return os.getenv("IN_ENCLAVE", "False").lower() == "true"
+
+
+def auth_chain_rpc_url() -> str:
+    """Preferred auth-chain RPC URL for current runtime mode."""
+    return AUTH_CHAIN_LOCAL_RPC_URL if _in_enclave() else AUTH_CHAIN_RPC_URL
+
+
+def _eth_block_number(rpc_url: str, timeout: int = 8) -> int:
+    payload = {"jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 1}
+    response = requests.post(rpc_url, json=payload, timeout=timeout)
+    response.raise_for_status()
+    data = response.json()
+    if data.get("error"):
+        raise RuntimeError(str(data["error"]))
+    block_hex = data.get("result")
+    if not (isinstance(block_hex, str) and block_hex.startswith("0x")):
+        raise RuntimeError(f"Invalid eth_blockNumber result: {block_hex}")
+    return int(block_hex, 16)
+
 def function_selector(signature: str) -> str:
     """Return 4-byte function selector (0x-prefixed, 8 hex chars)."""
     return "0x" + keccak(signature.encode("utf-8")).hex()[:8]
@@ -153,6 +176,7 @@ def get_business_chain_status() -> Dict[str, Any]:
         "chain_name": BUSINESS_CHAIN_NAME,
         "chain_id": BUSINESS_CHAIN_ID,
         "rpc_url": _chain.endpoint,
+        "source": "helios-local" if _in_enclave() else "external-rpc",
         "connected": False,
         "latest_block": None,
     }
@@ -166,25 +190,26 @@ def get_business_chain_status() -> Dict[str, Any]:
 
 
 def get_auth_chain_status() -> Dict[str, Any]:
+    primary_rpc = auth_chain_rpc_url()
     status: Dict[str, Any] = {
         "chain_name": AUTH_CHAIN_NAME,
         "chain_id": AUTH_CHAIN_ID,
-        "rpc_url": AUTH_CHAIN_RPC_URL,
+        "rpc_url": primary_rpc,
+        "source": "helios-local" if _in_enclave() else "external-rpc",
         "latest_block": None,
     }
-    payload = {"jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 1}
     try:
-        response = requests.post(AUTH_CHAIN_RPC_URL, json=payload, timeout=8)
-        response.raise_for_status()
-        data = response.json()
-        if data.get("error"):
-            status["error"] = data["error"]
-            return status
-        block_hex = data.get("result")
-        if isinstance(block_hex, str) and block_hex.startswith("0x"):
-            status["latest_block"] = int(block_hex, 16)
+        status["latest_block"] = _eth_block_number(primary_rpc)
     except Exception as exc:
         status["error"] = str(exc)
+        # In enclave mode, local auth-chain Helios is preferred.
+        # If local endpoint is unavailable, provide external RPC visibility.
+        if _in_enclave() and primary_rpc != AUTH_CHAIN_RPC_URL:
+            status["fallback_rpc_url"] = AUTH_CHAIN_RPC_URL
+            try:
+                status["fallback_latest_block"] = _eth_block_number(AUTH_CHAIN_RPC_URL, timeout=8)
+            except Exception as fallback_exc:
+                status["fallback_error"] = str(fallback_exc)
     return status
 
 def sign_update_ETH_price(

@@ -45,16 +45,18 @@ Default chain topology:
 
 The template is preconfigured for:
 - `kms_integration.enabled: true`
+- `kms_integration.use_app_wallet: true`
 - `storage.s3.encryption.mode: kms`
-- `helios_rpc.kind: ethereum`
-- `helios_rpc.network: mainnet`
+- `helios_rpc.enabled: true`
+- `helios_rpc.chains[0]: base-sepolia @ 18545` (auth chain / registry discovery)
+- `helios_rpc.chains[1]: ethereum mainnet @ 18546` (business chain)
 
 You must update at least:
 - `kms_integration.kms_app_id`
-- `kms_integration.base_urls`
+- `kms_integration.nova_app_registry`
 - `storage.s3.bucket`
 - `storage.s3.prefix`
-- `helios_rpc.execution_rpc` (your mainnet execution RPC)
+- `helios_rpc.chains[*].execution_rpc` (your execution RPC endpoints)
 
 ### 2) App config (`enclave/config.py`)
 
@@ -82,6 +84,16 @@ make build-frontend
 make dev-backend
 ```
 
+For enclave packaging/deployment:
+
+```bash
+# Build app image referenced by enclaver.yaml (sources.app)
+make build-docker
+
+# Package enclave artifact
+make build-enclave
+```
+
 Endpoints:
 - API: `http://localhost:8000`
 - UI: `http://localhost:8000/frontend/`
@@ -100,6 +112,7 @@ Endpoints:
 
 ### Chain, KMS, app wallet
 - `GET /api/chains`
+- `GET /api/enclaver/features`
 - `GET /api/storage/config`
 - `POST /api/kms/derive`
 - `POST /api/kms/kv/get`
@@ -136,3 +149,4 @@ Endpoints:
 4. Configure template files (`enclaver.yaml` + `enclave/config.py`).
 5. Deploy on Nova platform.
 6. Use frontend `KMS & App Wallet` tab to validate end-to-end behavior.
+7. Use frontend `Enclaver Features` tab to run one-click checks across multi-chain, S3 encryption, app-wallet, and KMS derive/KV.
