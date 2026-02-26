@@ -1375,242 +1375,243 @@ export default function Home() {
                                         </div>
                                     </div>
                                 </div>
+                            </div>
                         )}
 
-                                {activeTab === 'oracle' && (
-                                    <div className="space-y-6">
-                                        <h2 className="text-xl font-semibold mb-4">Oracle: Internet → Chain</h2>
-                                        <p className="text-slate-600 text-sm leading-relaxed mb-6">
-                                            The enclave fetches real-time data from the internet, processes it, and signs a
-                                            cryptographically secure transaction for on-chain execution.
-                                        </p>
+                        {activeTab === 'oracle' && (
+                            <div className="space-y-6">
+                                <h2 className="text-xl font-semibold mb-4">Oracle: Internet → Chain</h2>
+                                <p className="text-slate-600 text-sm leading-relaxed mb-6">
+                                    The enclave fetches real-time data from the internet, processes it, and signs a
+                                    cryptographically secure transaction for on-chain execution.
+                                </p>
 
-                                        <div className="bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-2xl p-8 flex flex-col items-center justify-center gap-6 shadow-sm">
-                                            <div className="text-center">
-                                                <div className="text-4xl mb-2">💎</div>
-                                                <div className="text-2xl font-mono text-slate-900 tracking-tight">ETH / USD</div>
-                                            </div>
-                                            <button
-                                                onClick={() => callApi('/api/oracle/update-now', 'POST')}
-                                                disabled={loading || !status.connected}
-                                                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-8 py-3 rounded-xl font-semibold shadow-lg shadow-blue-200/60"
-                                            >
-                                                Update On-Chain Now
-                                            </button>
-                                        </div>
-
-                                        {/* Background Runner Status */}
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                                                <label className="text-xs text-slate-500 block mb-1">Last Cron Run</label>
-                                                <span className="text-sm font-mono text-emerald-600 italic">
-                                                    {status.connected && responsesByTab.identity?.data?.statusInfo?.cron_info?.last_run
-                                                        ? new Date(responsesByTab.identity.data.statusInfo.cron_info.last_run).toLocaleTimeString()
-                                                        : 'Awaiting sync...'}
-                                                </span>
-                                            </div>
-                                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                                                <label className="text-xs text-slate-500 block mb-1">Background Runner Status</label>
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                                                    <span className="text-xs text-slate-600">
-                                                        Worker active • {responsesByTab.identity?.data?.statusInfo?.cron_info?.counter || 0} tasks completed
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => callApi('/status', 'GET')}
-                                            disabled={loading || !status.connected}
-                                            className="w-full py-3 border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition"
-                                        >
-                                            Refresh Background Job Stats
-                                        </button>
+                                <div className="bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-2xl p-8 flex flex-col items-center justify-center gap-6 shadow-sm">
+                                    <div className="text-center">
+                                        <div className="text-4xl mb-2">💎</div>
+                                        <div className="text-2xl font-mono text-slate-900 tracking-tight">ETH / USD</div>
                                     </div>
-                                )}
+                                    <button
+                                        onClick={() => callApi('/api/oracle/update-now', 'POST')}
+                                        disabled={loading || !status.connected}
+                                        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-8 py-3 rounded-xl font-semibold shadow-lg shadow-blue-200/60"
+                                    >
+                                        Update On-Chain Now
+                                    </button>
+                                </div>
 
-                                {activeTab === 'events' && (
-                                    <div className="space-y-6">
-                                        <h2 className="text-xl font-semibold mb-4">On-Chain Event Monitor</h2>
-                                        <p className="text-slate-600 text-sm leading-relaxed mb-6">
-                                            The enclave automatically monitors on-chain events. When an <code className="bg-slate-100 px-1 rounded">ETHPriceUpdateRequested</code> event
-                                            is detected, it fetches ETH/USD and submits an on-chain update automatically.
-                                        </p>
-
-                                        {/* Status Bar */}
-                                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-3">
-                                                    {eventMonitorLoading ? (
-                                                        <div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse"></div>
-                                                    ) : eventMonitorError ? (
-                                                        <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                                                    ) : eventMonitorData?.status === 'active' ? (
-                                                        <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
-                                                    ) : (
-                                                        <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                                                    )}
-                                                    <span className="text-sm font-medium text-slate-700">
-                                                        {eventMonitorLoading ? 'Loading...' :
-                                                            eventMonitorError ? 'Error' :
-                                                                eventMonitorData?.status === 'active' ? 'Monitoring Active' :
-                                                                    eventMonitorData?.status === 'not_configured' ? 'Contract Not Configured' :
-                                                                        'Initializing...'}
-                                                    </span>
-                                                </div>
-                                                <div className="text-xs text-slate-500">
-                                                    {eventMonitorData?.last_poll && (
-                                                        <span>Last poll: {new Date(eventMonitorData.last_poll).toLocaleTimeString()}</span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            {eventMonitorData?.contract_address && (
-                                                <div className="mt-2 text-xs text-slate-500">
-                                                    Contract: <code className="bg-slate-100 px-1 rounded">{eventMonitorData.contract_address}</code>
-                                                </div>
-                                            )}
-                                            {eventMonitorData?.current_block && (
-                                                <div className="mt-1 text-xs text-slate-500">
-                                                    Block: <span className="font-mono">{eventMonitorData.current_block}</span>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Error Display */}
-                                        {eventMonitorError && (
-                                            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                                                <p className="text-red-700 font-semibold">✗ {eventMonitorError}</p>
-                                            </div>
-                                        )}
-
-                                        {/* Recent Events */}
-                                        {eventMonitorData?.recent_events?.length > 0 && (
-                                            <div className="bg-white border border-slate-200 rounded-2xl p-4">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                                                        Recent Events
-                                                    </div>
-                                                    {eventMonitorData.pending_count > 0 && (
-                                                        <span className="bg-amber-100 text-amber-700 text-xs px-2 py-1 rounded-full">
-                                                            {eventMonitorData.pending_count} pending
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <div className="overflow-auto max-h-[200px]">
-                                                    <table className="w-full text-xs">
-                                                        <thead className="text-slate-500">
-                                                            <tr className="border-b border-slate-200">
-                                                                <th className="text-left py-2 pr-3">Block</th>
-                                                                <th className="text-left py-2 pr-3">Request ID</th>
-                                                                <th className="text-left py-2 pr-3">Status</th>
-                                                                <th className="text-left py-2 pr-3">Price</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="text-slate-700">
-                                                            {eventMonitorData.recent_events.map((e: any, idx: number) => (
-                                                                <tr key={idx} className={`border-b border-slate-100 ${!e.handled ? 'bg-amber-50' : ''}`}>
-                                                                    <td className="py-2 pr-3 font-mono">{e.block_number}</td>
-                                                                    <td className="py-2 pr-3 font-mono">#{e.request_id}</td>
-                                                                    <td className="py-2 pr-3">
-                                                                        {e.handled ? (
-                                                                            <span className="text-emerald-600">✓ handled</span>
-                                                                        ) : (
-                                                                            <span className="text-amber-600">⏳ pending</span>
-                                                                        )}
-                                                                    </td>
-                                                                    <td className="py-2 pr-3 font-mono">
-                                                                        {e.price_usd ? `$${e.price_usd}` : '-'}
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Activity Logs */}
-                                        {eventMonitorData?.logs?.length > 0 && (
-                                            <div className="bg-slate-900 rounded-2xl p-4">
-                                                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">
-                                                    Activity Log
-                                                </div>
-                                                <div className="font-mono text-xs text-slate-300 space-y-1 max-h-[200px] overflow-auto">
-                                                    {eventMonitorData.logs.slice().reverse().map((log: any, idx: number) => (
-                                                        <div key={idx} className="flex gap-2">
-                                                            <span className="text-slate-500 shrink-0">
-                                                                {new Date(log.time).toLocaleTimeString()}
-                                                            </span>
-                                                            <span className={
-                                                                log.message.includes('✓') ? 'text-emerald-400' :
-                                                                    log.message.includes('✗') ? 'text-red-400' :
-                                                                        'text-slate-300'
-                                                            }>
-                                                                {log.message}
-                                                            </span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Last Price Info */}
-                                        {eventMonitorData?.last_price_usd && (
-                                            <div className="bg-gradient-to-br from-emerald-50 to-white border border-emerald-200 rounded-xl p-4">
-                                                <div className="text-xs text-slate-500 mb-1">Last Updated Price</div>
-                                                <div className="text-2xl font-mono text-emerald-700">${eventMonitorData.last_price_usd}</div>
-                                                <div className="text-xs text-slate-500 mt-1">
-                                                    {eventMonitorData.last_updated_at && (
-                                                        <span>Updated: {new Date(eventMonitorData.last_updated_at * 1000).toLocaleString()}</span>
-                                                    )}
-                                                    {eventMonitorData.last_reason && (
-                                                        <span className="ml-2">({eventMonitorData.last_reason})</span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
+                                {/* Background Runner Status */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                        <label className="text-xs text-slate-500 block mb-1">Last Cron Run</label>
+                                        <span className="text-sm font-mono text-emerald-600 italic">
+                                            {status.connected && responsesByTab.identity?.data?.statusInfo?.cron_info?.last_run
+                                                ? new Date(responsesByTab.identity.data.statusInfo.cron_info.last_run).toLocaleTimeString()
+                                                : 'Awaiting sync...'}
+                                        </span>
                                     </div>
-                                )}
-
-                                {/* Universal Response Viewer */}
-                                {activeResponse && (
-                                    <div className="mt-8 border-t border-slate-200 pt-8 animate-in fade-in slide-in-from-top-4 duration-300">
-                                        <div className="flex justify-between items-center mb-3">
-                                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                                                Latest Response: {activeResponse.type}
-                                            </h3>
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${activeResponse.success ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                                {activeResponse.success ? 'SUCCESS' : 'FAILED'}
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                        <label className="text-xs text-slate-500 block mb-1">Background Runner Status</label>
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                                            <span className="text-xs text-slate-600">
+                                                Worker active • {responsesByTab.identity?.data?.statusInfo?.cron_info?.counter || 0} tasks completed
                                             </span>
                                         </div>
-                                        {/* Show error summary for failed requests */}
-                                        {!activeResponse.success && activeResponse.error && (
-                                            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
-                                                <p className="text-sm font-semibold text-red-700">{activeResponse.error}</p>
-                                                {activeResponse.data && typeof activeResponse.data === 'object' && (
-                                                    <div className="mt-3 text-xs text-red-600 space-y-1">
-                                                        {activeResponse.data.error && (
-                                                            <p><span className="font-semibold">Error Code:</span> {activeResponse.data.error}</p>
-                                                        )}
-                                                        {activeResponse.data.hint && (
-                                                            <p><span className="font-semibold">Hint:</span> {activeResponse.data.hint}</p>
-                                                        )}
-                                                        {activeResponse.data.tee_address && (
-                                                            <p><span className="font-semibold">TEE Address:</span> <code className="bg-red-100 px-1 rounded">{activeResponse.data.tee_address}</code></p>
-                                                        )}
-                                                        {activeResponse.data.contract_address && (
-                                                            <p><span className="font-semibold">Contract:</span> <code className="bg-red-100 px-1 rounded">{activeResponse.data.contract_address}</code></p>
-                                                        )}
-                                                    </div>
-                                                )}
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => callApi('/status', 'GET')}
+                                    disabled={loading || !status.connected}
+                                    className="w-full py-3 border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition"
+                                >
+                                    Refresh Background Job Stats
+                                </button>
+                            </div>
+                        )}
+
+                        {activeTab === 'events' && (
+                            <div className="space-y-6">
+                                <h2 className="text-xl font-semibold mb-4">On-Chain Event Monitor</h2>
+                                <p className="text-slate-600 text-sm leading-relaxed mb-6">
+                                    The enclave automatically monitors on-chain events. When an <code className="bg-slate-100 px-1 rounded">ETHPriceUpdateRequested</code> event
+                                    is detected, it fetches ETH/USD and submits an on-chain update automatically.
+                                </p>
+
+                                {/* Status Bar */}
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            {eventMonitorLoading ? (
+                                                <div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse"></div>
+                                            ) : eventMonitorError ? (
+                                                <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                                            ) : eventMonitorData?.status === 'active' ? (
+                                                <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+                                            ) : (
+                                                <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                                            )}
+                                            <span className="text-sm font-medium text-slate-700">
+                                                {eventMonitorLoading ? 'Loading...' :
+                                                    eventMonitorError ? 'Error' :
+                                                        eventMonitorData?.status === 'active' ? 'Monitoring Active' :
+                                                            eventMonitorData?.status === 'not_configured' ? 'Contract Not Configured' :
+                                                                'Initializing...'}
+                                            </span>
+                                        </div>
+                                        <div className="text-xs text-slate-500">
+                                            {eventMonitorData?.last_poll && (
+                                                <span>Last poll: {new Date(eventMonitorData.last_poll).toLocaleTimeString()}</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {eventMonitorData?.contract_address && (
+                                        <div className="mt-2 text-xs text-slate-500">
+                                            Contract: <code className="bg-slate-100 px-1 rounded">{eventMonitorData.contract_address}</code>
+                                        </div>
+                                    )}
+                                    {eventMonitorData?.current_block && (
+                                        <div className="mt-1 text-xs text-slate-500">
+                                            Block: <span className="font-mono">{eventMonitorData.current_block}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Error Display */}
+                                {eventMonitorError && (
+                                    <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                                        <p className="text-red-700 font-semibold">✗ {eventMonitorError}</p>
+                                    </div>
+                                )}
+
+                                {/* Recent Events */}
+                                {eventMonitorData?.recent_events?.length > 0 && (
+                                    <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                                                Recent Events
                                             </div>
-                                        )}
-                                        <pre className="bg-slate-50 rounded-xl p-5 text-xs font-mono text-slate-700 overflow-auto max-h-[300px] border border-slate-200 whitespace-pre-wrap">
-                                            {JSON.stringify(activeResponse.data || activeResponse.error, null, 2)}
-                                        </pre>
+                                            {eventMonitorData.pending_count > 0 && (
+                                                <span className="bg-amber-100 text-amber-700 text-xs px-2 py-1 rounded-full">
+                                                    {eventMonitorData.pending_count} pending
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="overflow-auto max-h-[200px]">
+                                            <table className="w-full text-xs">
+                                                <thead className="text-slate-500">
+                                                    <tr className="border-b border-slate-200">
+                                                        <th className="text-left py-2 pr-3">Block</th>
+                                                        <th className="text-left py-2 pr-3">Request ID</th>
+                                                        <th className="text-left py-2 pr-3">Status</th>
+                                                        <th className="text-left py-2 pr-3">Price</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="text-slate-700">
+                                                    {eventMonitorData.recent_events.map((e: any, idx: number) => (
+                                                        <tr key={idx} className={`border-b border-slate-100 ${!e.handled ? 'bg-amber-50' : ''}`}>
+                                                            <td className="py-2 pr-3 font-mono">{e.block_number}</td>
+                                                            <td className="py-2 pr-3 font-mono">#{e.request_id}</td>
+                                                            <td className="py-2 pr-3">
+                                                                {e.handled ? (
+                                                                    <span className="text-emerald-600">✓ handled</span>
+                                                                ) : (
+                                                                    <span className="text-amber-600">⏳ pending</span>
+                                                                )}
+                                                            </td>
+                                                            <td className="py-2 pr-3 font-mono">
+                                                                {e.price_usd ? `$${e.price_usd}` : '-'}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Activity Logs */}
+                                {eventMonitorData?.logs?.length > 0 && (
+                                    <div className="bg-slate-900 rounded-2xl p-4">
+                                        <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">
+                                            Activity Log
+                                        </div>
+                                        <div className="font-mono text-xs text-slate-300 space-y-1 max-h-[200px] overflow-auto">
+                                            {eventMonitorData.logs.slice().reverse().map((log: any, idx: number) => (
+                                                <div key={idx} className="flex gap-2">
+                                                    <span className="text-slate-500 shrink-0">
+                                                        {new Date(log.time).toLocaleTimeString()}
+                                                    </span>
+                                                    <span className={
+                                                        log.message.includes('✓') ? 'text-emerald-400' :
+                                                            log.message.includes('✗') ? 'text-red-400' :
+                                                                'text-slate-300'
+                                                    }>
+                                                        {log.message}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Last Price Info */}
+                                {eventMonitorData?.last_price_usd && (
+                                    <div className="bg-gradient-to-br from-emerald-50 to-white border border-emerald-200 rounded-xl p-4">
+                                        <div className="text-xs text-slate-500 mb-1">Last Updated Price</div>
+                                        <div className="text-2xl font-mono text-emerald-700">${eventMonitorData.last_price_usd}</div>
+                                        <div className="text-xs text-slate-500 mt-1">
+                                            {eventMonitorData.last_updated_at && (
+                                                <span>Updated: {new Date(eventMonitorData.last_updated_at * 1000).toLocaleString()}</span>
+                                            )}
+                                            {eventMonitorData.last_reason && (
+                                                <span className="ml-2">({eventMonitorData.last_reason})</span>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
                             </div>
+                        )}
+
+                        {/* Universal Response Viewer */}
+                        {activeResponse && (
+                            <div className="mt-8 border-t border-slate-200 pt-8 animate-in fade-in slide-in-from-top-4 duration-300">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                                        Latest Response: {activeResponse.type}
+                                    </h3>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${activeResponse.success ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                        {activeResponse.success ? 'SUCCESS' : 'FAILED'}
+                                    </span>
+                                </div>
+                                {/* Show error summary for failed requests */}
+                                {!activeResponse.success && activeResponse.error && (
+                                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                                        <p className="text-sm font-semibold text-red-700">{activeResponse.error}</p>
+                                        {activeResponse.data && typeof activeResponse.data === 'object' && (
+                                            <div className="mt-3 text-xs text-red-600 space-y-1">
+                                                {activeResponse.data.error && (
+                                                    <p><span className="font-semibold">Error Code:</span> {activeResponse.data.error}</p>
+                                                )}
+                                                {activeResponse.data.hint && (
+                                                    <p><span className="font-semibold">Hint:</span> {activeResponse.data.hint}</p>
+                                                )}
+                                                {activeResponse.data.tee_address && (
+                                                    <p><span className="font-semibold">TEE Address:</span> <code className="bg-red-100 px-1 rounded">{activeResponse.data.tee_address}</code></p>
+                                                )}
+                                                {activeResponse.data.contract_address && (
+                                                    <p><span className="font-semibold">Contract:</span> <code className="bg-red-100 px-1 rounded">{activeResponse.data.contract_address}</code></p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                <pre className="bg-slate-50 rounded-xl p-5 text-xs font-mono text-slate-700 overflow-auto max-h-[300px] border border-slate-200 whitespace-pre-wrap">
+                                    {JSON.stringify(activeResponse.data || activeResponse.error, null, 2)}
+                                </pre>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </main>
 

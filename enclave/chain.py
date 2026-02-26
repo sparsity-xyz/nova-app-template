@@ -117,6 +117,9 @@ class Chain:
             logger.debug(f"Finalized eth_call fallback to latest: {exc}")
             return self.eth_call(to, data, block_identifier="latest")
 
+def _in_enclave() -> bool:
+    return os.getenv("IN_ENCLAVE", "False").lower() == "true"
+
 # Default chain instance
 _chain = Chain()
 
@@ -124,8 +127,7 @@ def wait_for_helios(timeout: int = 300):
     return _chain.wait_for_helios(timeout)
 
 
-def _in_enclave() -> bool:
-    return os.getenv("IN_ENCLAVE", "False").lower() == "true"
+
 
 
 def auth_chain_rpc_url() -> str:
