@@ -35,7 +35,9 @@ BUSINESS_CHAIN_NAME: str = "ethereum-mainnet"
 BUSINESS_CHAIN_ID: int = 1
 
 # Used outside enclave mode.
-BUSINESS_CHAIN_DIRECT_RPC_URL: str = "https://eth.llamarpc.com"
+BUSINESS_CHAIN_DIRECT_RPC_URL: str = "https://ethereum-rpc.publicnode.com"
+# Secondary fallback endpoint for operators when the primary endpoint is unstable.
+BUSINESS_CHAIN_DIRECT_RPC_FALLBACK_URL: str = "https://eth.drpc.org"
 # In enclave mode (IN_ENCLAVE=true), this app expects the business chain Helios
 # instance to be available at this local endpoint (configured in enclaver.yaml).
 BUSINESS_CHAIN_LOCAL_RPC_URL: str = "http://127.0.0.1:18546"
