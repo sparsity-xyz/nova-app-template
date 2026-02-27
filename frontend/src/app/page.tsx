@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { EnclaveClient, type EncryptedCallTrace, type FetchedAttestation, type TLSConnectTrace } from '@/lib/crypto';
 import { fetchAppFromRegistry, DEFAULT_REGISTRY_ADDRESS, DEFAULT_RPC_URL, type SparsityApp, formatPubkeyPreview, formatCodeMeasurement } from '@/lib/registry';
+import KmsDemo from '@/components/KmsDemo';
 
 interface ConnectionStatus {
     connected: boolean;
@@ -228,6 +229,20 @@ export default function Home() {
         return () => clearInterval(interval);
     }, [activeTab, status.connected, client]);
 
+    /**
+     * Helper function to execute API calls to the Enclaver backend.
+     * 
+     * This function encapsulates the communication with the TEE proxy. It handles:
+     * - Standard plaintext API requests (via client.call)
+     * - E2E Encrypted API requests (via client.callEncrypted) using ECDH + AES-GCM
+     * - State management for loading indicators and active tab responses.
+     *
+     * @param path The relative API endpoint path (e.g., '/api/storage')
+     * @param method HTTP method (GET or POST)
+     * @param body Optional JSON body for POST requests
+     * @param encrypted If true, encrypts the request payload and expects an encrypted response
+     * @param tabOverride Optional tab ID to store the response under, bypassing the active tab
+     */
     const callApi = async (path: string, method: 'GET' | 'POST' = 'GET', body?: any, encrypted = false, tabOverride?: string) => {
         const tabAtCall = tabOverride || activeTab;
         setLoading(true);
@@ -269,6 +284,15 @@ export default function Home() {
         return error instanceof Error ? error.message : 'Request failed';
     };
 
+    /**
+     * Executes a comprehensive suite of API calls to demonstrate core Enclaver capabilities.
+     * 
+     * This demo automatically verifies the following features:
+     * 1. Multi-chain configuration (Auth vs Business chain)
+     * 2. S3 encryption configuration (KMS-backed or Plaintext)
+     * 3. App Wallet capabilities (Address retrieval and signing)
+     * 4. KMS functionality (Key derivation and Key-Value store operations)
+     */
     const runEnclaverDemo = async () => {
         if (!status.connected || featureDemoRunning) return;
 
@@ -350,6 +374,17 @@ export default function Home() {
         }
     };
 
+    /**
+     * Demonstrates an end-to-end encrypted API call to the Enclave.
+     * 
+     * Uses the `EnclaveClient` to:
+     * 1. Perform ECDH key exchange with the Enclave's public key.
+     * 2. Encrypt the request payload using AES-256-GCM.
+     * 3. Send the ciphertext to the backend.
+     * 4. Receive and decrypt the response.
+     * 
+     * This guarantees data privacy even if the TLS tunnel is intercepted.
+     */
     const callEchoEncrypted = async () => {
         setLoading(true);
         setResponsesByTab(prev => ({ ...prev, 'secure-echo': null }));
@@ -642,7 +677,8 @@ export default function Home() {
                                 { id: 'secure-echo', label: 'Secure Echo', icon: '🔒' },
                                 { id: 'storage', label: 'S3 Storage', icon: '📦' },
                                 { id: 'enclaver', label: 'Enclaver Features', icon: '🧩' },
-                                { id: 'kms-wallet', label: 'KMS & App Wallet', icon: '🗝️' },
+                                { id: 'kms-wallet', label: 'App Wallet Sign', icon: '🗝️' },
+                                { id: 'kms-demo', label: 'KMS Demo', icon: '🗄️' },
                                 { id: 'oracle', label: 'Oracle Demo', icon: '🌐' },
                                 { id: 'events', label: 'Event Monitor', icon: '📊' },
                             ].map(tab => (
@@ -994,8 +1030,15 @@ export default function Home() {
                                             )}
                                             {activeResponse.data.tx_signer && (
                                                 <div className="bg-white border border-slate-200 rounded-xl p-3">
-                                                    <p className="text-slate-500 mb-1">Tx Signer Type</p>
+                                                    <p className="text-slate-500 mb-1 flex items-center justify-between">
+                                                        Tx Signer Type
+                                                    </p>
                                                     <code className="text-slate-800">{activeResponse.data.tx_signer}</code>
+                                                    {activeResponse.data.tx_signer === 'app_wallet' && (
+                                                        <p className="text-[10px] text-blue-600 mt-1 bg-blue-50 px-1 py-0.5 rounded border border-blue-100">
+                                                            Tip: Base Sepolia ETH is required for App Wallet gas fees.
+                                                        </p>
+                                                    )}
                                                 </div>
                                             )}
                                             {/* TEE Balance */}
@@ -1193,13 +1236,19 @@ export default function Home() {
                                             >
                                                 Derive Key
                                             </button>
-                                            <button
-                                                onClick={() => callApi('/api/kms/kv/put', 'POST', { key: kmsKvKey, value: kmsKvValue, ttl_ms: 0 }, false, 'enclaver')}
-                                                disabled={loading || !status.connected}
-                                                className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
-                                            >
-                                                KV Put
-                                            </button>
+
+                                            <div className="relative group">
+                                                <button
+                                                    onClick={() => callApi('/api/kms/kv/put', 'POST', { key: kmsKvKey, value: kmsKvValue, ttl_ms: 0 }, false, 'enclaver')}
+                                                    disabled={loading || !status.connected}
+                                                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50 h-full"
+                                                >
+                                                    KV Put
+                                                </button>
+                                                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-max p-2 bg-slate-800 text-xs text-slate-100 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 hidden sm:block">
+                                                    TTL optionally expires the Key-Value data after Ms.
+                                                </div>
+                                            </div>
                                             <button
                                                 onClick={() => callApi('/api/kms/kv/get', 'POST', { key: kmsKvKey }, false, 'enclaver')}
                                                 disabled={loading || !status.connected}
@@ -1251,10 +1300,10 @@ export default function Home() {
 
                         {activeTab === 'kms-wallet' && (
                             <div className="space-y-6">
-                                <h2 className="text-xl font-semibold mb-4">KMS & App Wallet</h2>
+                                <h2 className="text-xl font-semibold mb-4">App Wallet Demonstration</h2>
                                 <p className="text-slate-600 text-sm leading-relaxed mb-6">
-                                    Validate the dual-chain template setup: KMS/app-wallet authorization on Base Sepolia,
-                                    and business logic on Ethereum mainnet.
+                                    Validate the dual-chain template setup: App-wallet authorization on Base Sepolia,
+                                    and business logic acting as a signer on Ethereum mainnet.
                                 </p>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1348,7 +1397,12 @@ export default function Home() {
                                 </div>
 
                                 <div className="rounded-2xl border border-slate-200 p-5 bg-white space-y-4">
-                                    <h3 className="text-sm font-semibold text-slate-800">App Wallet</h3>
+                                    <h3 className="text-sm font-semibold text-slate-800 flex items-center justify-between">
+                                        App Wallet
+                                        <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-1 rounded font-normal">
+                                            Gas funding (ETH) required on specific business chain
+                                        </span>
+                                    </h3>
                                     <button
                                         onClick={() => callApi('/api/app-wallet/address', 'GET')}
                                         disabled={loading || !status.connected}
@@ -1376,6 +1430,13 @@ export default function Home() {
                                     </div>
                                 </div>
                             </div>
+                        )}
+
+                        {activeTab === 'kms-demo' && (
+                            <KmsDemo
+                                callApi={(path: string, method: 'GET' | 'POST', body: any) => callApi(path, method, body, false, 'kms-demo')}
+                                isOffline={!status.connected}
+                            />
                         )}
 
                         {activeTab === 'oracle' && (

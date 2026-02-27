@@ -430,6 +430,8 @@ def get_chain_status():
     Return chain topology used by the template:
     - auth chain: registry/KMS authorization
     - business chain: app logic + contract writes (Ethereum mainnet default)
+    
+    This endpoint probes the Helios trustless RPC proxy.
     """
     business = get_business_chain_status()
     auth = get_auth_chain_status()
@@ -469,6 +471,9 @@ def get_enclaver_feature_snapshot():
     2) S3 encryption configuration
     3) app-wallet availability
     4) KMS derive + KV endpoint availability
+    
+    This is primarily a diagnostic endpoint utilized by the frontend
+    to verify platform connectivity and configuration.
     """
     chain_status = get_chain_status()
     storage_status = get_storage_config()
@@ -527,6 +532,9 @@ def get_enclaver_feature_snapshot():
 
 @router.post("/kms/derive")
 def kms_derive(req: KmsDeriveRequest):
+    """
+    HTTP route to derive a deterministic cryptographic key using the KMS client.
+    """
     client = _require_kms_client()
     try:
         return client.derive(path=req.path, context=req.context, length=req.length)
@@ -536,6 +544,9 @@ def kms_derive(req: KmsDeriveRequest):
 
 @router.post("/kms/kv/get")
 def kms_kv_get(req: KmsKvGetRequest):
+    """
+    HTTP route to get a value from the KMS Key-Value store.
+    """
     client = _require_kms_client()
     try:
         return client.kv_get(key=req.key)
@@ -545,6 +556,10 @@ def kms_kv_get(req: KmsKvGetRequest):
 
 @router.post("/kms/kv/put")
 def kms_kv_put(req: KmsKvPutRequest):
+    """
+    HTTP route to put a value into the KMS Key-Value store.
+    Supports Optional TTL expiration.
+    """
     client = _require_kms_client()
     try:
         return client.kv_put(key=req.key, value=req.value, ttl_ms=req.ttl_ms)
@@ -554,6 +569,9 @@ def kms_kv_put(req: KmsKvPutRequest):
 
 @router.post("/kms/kv/delete")
 def kms_kv_delete(req: KmsKvDeleteRequest):
+    """
+    HTTP route to delete a value from the KMS Key-Value store.
+    """
     client = _require_kms_client()
     try:
         return client.kv_delete(key=req.key)
@@ -563,6 +581,7 @@ def kms_kv_delete(req: KmsKvDeleteRequest):
 
 @router.get("/app-wallet/address")
 def app_wallet_address():
+    """HTTP route to fetch the Ethereum address of the App Wallet."""
     client = _require_kms_client()
     try:
         return client.app_wallet_address()
@@ -572,6 +591,7 @@ def app_wallet_address():
 
 @router.post("/app-wallet/sign")
 def app_wallet_sign(req: AppWalletSignRequest):
+    """HTTP route to sign a plaintext message with the App Wallet."""
     client = _require_kms_client()
     try:
         return client.app_wallet_sign(message=req.message)
@@ -584,11 +604,100 @@ def app_wallet_sign(req: AppWalletSignRequest):
 
 @router.post("/app-wallet/sign-tx")
 def app_wallet_sign_tx(payload: Dict[str, Any] = Body(...)):
+    """HTTP route to sign an Ethereum transaction with the App Wallet."""
     client = _require_kms_client()
     try:
         return client.app_wallet_sign_tx(payload=payload)
     except PlatformApiError as err:
         _raise_platform_error(err)
+
+
+# =============================================================================
+# Helper for On-Chain Synchronization
+# =============================================================================
+
+def _anchor_state_onchain(store_value: Any) -> Dict[str, Any]:
+    """
+    Decoupled helper to hash the provided state and anchor it to the specific 
+    business chain contract using the preferred App Wallet or fallback TEE Wallet.
+    """
+    anchor_status: Dict[str, Any] = {}
+
+    if not CONTRACT_ADDRESS:
+        anchor_status["anchor_skipped"] = True
+        anchor_status["anchor_note"] = "App contract not configured (CONTRACT_ADDRESS is empty)"
+        return anchor_status
+
+    # Resolve tx signer (app wallet preferred, tee wallet fallback).
+    try:
+        signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
+        if odyn:
+            anchor_status["tee_address"] = Web3.to_checksum_address(odyn.eth_address())
+        anchor_status["tx_signer"] = signer_kind
+        anchor_status["signer_address"] = signer_address
+    except Exception as e:
+        anchor_status["anchor_error"] = f"Failed to resolve transaction signer: {e}"
+        anchor_status["error_type"] = "tx_signer_unavailable"
+        return anchor_status
+
+    # Check signer balance for gas.
+    try:
+        from chain import _chain
+        balance_eth = _chain.get_balance_eth(signer_address)
+        anchor_status["signer_balance_eth"] = balance_eth
+        if signer_kind == "tee_wallet":
+            anchor_status["tee_balance_eth"] = balance_eth
+        if balance_eth == 0:
+            anchor_status["anchor_error"] = (
+                f"{signer_kind} signer {signer_address} has no funds. "
+                "Please fund the signer to cover gas."
+            )
+            anchor_status["error_type"] = "tx_signer_no_funds"
+            return anchor_status
+    except Exception as e:
+        logger.warning(f"Failed to check signer balance: {e}")
+        anchor_status["balance_check_error"] = str(e)
+
+    # Compute state hash (using normalized store_value)
+    state_hash = compute_state_hash(store_value)
+    anchor_status["state_hash"] = state_hash
+    anchor_status["contract_address"] = CONTRACT_ADDRESS
+
+    # Sign and broadcast
+    try:
+        anchor = sign_update_state_hash(
+            odyn=odyn,
+            contract_address=CONTRACT_ADDRESS,
+            chain_id=BUSINESS_CHAIN_ID,
+            state_hash=state_hash,
+            broadcast=BROADCAST_TX,
+            sign_tx_fn=sign_tx_fn,
+            sender_address=signer_address,
+            signer_kind=signer_kind,
+        )
+        anchor_status["anchor_tx"] = anchor
+        anchor_status["broadcast"] = BROADCAST_TX
+
+        # Check broadcast result
+        if BROADCAST_TX and anchor.get("broadcasted") is False:
+            anchor_status["anchor_error"] = anchor.get("broadcast_error", "Unknown broadcast error")
+            anchor_status["error_type"] = "broadcast_failed"
+    except Exception as e:
+        error_str = str(e).lower()
+        anchor_status["anchor_error"] = str(e)
+        if "insufficient funds" in error_str or "doesn't have enough funds" in error_str:
+            anchor_status["error_type"] = "insufficient_funds"
+            anchor_status["hint"] = f"{signer_kind} signer {signer_address} does not have enough ETH for gas."
+        elif "nonce" in error_str:
+            anchor_status["error_type"] = "nonce_issue"
+            anchor_status["hint"] = "Transaction nonce conflict. A previous tx may be pending."
+        elif "execution reverted" in error_str:
+            anchor_status["error_type"] = "execution_reverted"
+            anchor_status["hint"] = "Contract call reverted. Check signer authorization in your business contract."
+        else:
+            anchor_status["error_type"] = "sign_or_broadcast_failed"
+
+    return anchor_status
 
 
 # =============================================================================
@@ -638,84 +747,8 @@ def save_to_storage(req: StorageRequest):
 
         # Anchor state hash on-chain for user_settings key when enabled.
         if success and ANCHOR_ON_WRITE and req.key == "user_settings":
-            anchor_status: Dict[str, Any] = {}
-
-            if not CONTRACT_ADDRESS:
-                anchor_status["anchor_skipped"] = True
-                anchor_status["anchor_note"] = "App contract not configured (CONTRACT_ADDRESS is empty)"
-            else:
-                # Resolve tx signer (app wallet preferred, tee wallet fallback).
-                try:
-                    signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
-                    tee_address = Web3.to_checksum_address(odyn.eth_address())
-                    anchor_status["tee_address"] = tee_address
-                    anchor_status["tx_signer"] = signer_kind
-                    anchor_status["signer_address"] = signer_address
-                except Exception as e:
-                    anchor_status["anchor_error"] = f"Failed to resolve transaction signer: {e}"
-                    anchor_status["error_type"] = "tx_signer_unavailable"
-                    result.update(anchor_status)
-                    return result
-
-                # Check signer balance for gas.
-                try:
-                    from chain import _chain
-                    balance_eth = _chain.get_balance_eth(signer_address)
-                    anchor_status["signer_balance_eth"] = balance_eth
-                    if signer_kind == "tee_wallet":
-                        anchor_status["tee_balance_eth"] = balance_eth
-                    if balance_eth == 0:
-                        anchor_status["anchor_error"] = (
-                            f"{signer_kind} signer {signer_address} has no funds. "
-                            "Please fund the signer to cover gas."
-                        )
-                        anchor_status["error_type"] = "tx_signer_no_funds"
-                        result.update(anchor_status)
-                        return result
-                except Exception as e:
-                    logger.warning(f"Failed to check signer balance: {e}")
-                    anchor_status["balance_check_error"] = str(e)
-
-                # Compute state hash (use normalized store_value, not raw req.value)
-                state_hash = compute_state_hash(store_value)
-                anchor_status["state_hash"] = state_hash
-                anchor_status["contract_address"] = CONTRACT_ADDRESS
-
-                # Sign and broadcast
-                try:
-                    anchor = sign_update_state_hash(
-                        odyn=odyn,
-                        contract_address=CONTRACT_ADDRESS,
-                        chain_id=BUSINESS_CHAIN_ID,
-                        state_hash=state_hash,
-                        broadcast=BROADCAST_TX,
-                        sign_tx_fn=sign_tx_fn,
-                        sender_address=signer_address,
-                        signer_kind=signer_kind,
-                    )
-                    anchor_status["anchor_tx"] = anchor
-                    anchor_status["broadcast"] = BROADCAST_TX
-
-                    # Check broadcast result
-                    if BROADCAST_TX and anchor.get("broadcasted") is False:
-                        anchor_status["anchor_error"] = anchor.get("broadcast_error", "Unknown broadcast error")
-                        anchor_status["error_type"] = "broadcast_failed"
-                except Exception as e:
-                    error_str = str(e).lower()
-                    anchor_status["anchor_error"] = str(e)
-                    if "insufficient funds" in error_str or "doesn't have enough funds" in error_str:
-                        anchor_status["error_type"] = "insufficient_funds"
-                        anchor_status["hint"] = f"{signer_kind} signer {signer_address} does not have enough ETH for gas."
-                    elif "nonce" in error_str:
-                        anchor_status["error_type"] = "nonce_issue"
-                        anchor_status["hint"] = "Transaction nonce conflict. A previous tx may be pending."
-                    elif "execution reverted" in error_str:
-                        anchor_status["error_type"] = "execution_reverted"
-                        anchor_status["hint"] = "Contract call reverted. Check signer authorization in your business contract."
-                    else:
-                        anchor_status["error_type"] = "sign_or_broadcast_failed"
-
-            result.update(anchor_status)
+            anchor_res = _anchor_state_onchain(store_value)
+            result.update(anchor_res)
 
         return result
     except Exception as e:

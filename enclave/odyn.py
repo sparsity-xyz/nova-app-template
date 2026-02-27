@@ -335,28 +335,36 @@ class Odyn:
     # =========================================================================
 
     def kms_derive(self, path: str, context: str = "", length: int = 32) -> Dict[str, Any]:
+        """
+        Derive a deterministic cryptographic key using the KMS.
+        Instead of calling this on `Odyn`, you may also use `NovaKmsClient.derive()`.
+        """
         payload = {"path": path, "context": context, "length": length}
         return self._call("POST", "/v1/kms/derive", payload)
 
     def kms_kv_get(self, key: str) -> Dict[str, Any]:
+        """Get a value from the KMS Key-Value store."""
         return self._call("POST", "/v1/kms/kv/get", {"key": key})
 
     def kms_kv_put(self, key: str, value: str, ttl_ms: int = 0) -> Dict[str, Any]:
+        """Put a value into the KMS Key-Value store."""
         payload = {"key": key, "value": value, "ttl_ms": ttl_ms}
         return self._call("POST", "/v1/kms/kv/put", payload)
 
     def kms_kv_delete(self, key: str) -> Dict[str, Any]:
+        """Delete a value from the KMS Key-Value store."""
         return self._call("POST", "/v1/kms/kv/delete", {"key": key})
 
     def app_wallet_address(self) -> Dict[str, Any]:
+        """Get the Ethereum address of the application's App Wallet."""
         return self._call("GET", "/v1/app-wallet/address")
 
     def app_wallet_sign(self, message: str) -> Dict[str, Any]:
+        """Sign a message using the application's App Wallet."""
         return self._call("POST", "/v1/app-wallet/sign", {"message": message})
 
-
-
     def app_wallet_sign_tx(self, tx: Dict[str, Any], include_attestation: bool = False) -> Dict[str, Any]:
+        """Sign a transaction using the application's App Wallet."""
         payload: Dict[str, Any]
         if "payload" in tx:
             payload = dict(tx)
