@@ -1,8 +1,11 @@
 /**
  * Nova App Registry Client
- * 
- * Queries the SparsityAppRegistry contract to fetch registered app information
- * including appUrl, teePubkey, and codeMeasurement for verified TLS connections.
+ *
+ * Registry-mode connection flow:
+ * 1) Query getActiveInstances(appId) to list active instance wallets.
+ * 2) Randomly pick one wallet from the active set.
+ * 3) Query getInstanceByWallet(wallet) for URL + teePubkey.
+ * 4) Query getVersion(appId, versionId) for codeMeasurement.
  */
 
 // Default registry contract address on Base Sepolia (latest proxy deployment)
@@ -11,11 +14,81 @@ export const DEFAULT_REGISTRY_ADDRESS = '0x0f68E6e699f2E972998a1EcC000c7ce103E64
 // Default RPC URL for Base Sepolia
 export const DEFAULT_RPC_URL = 'https://sepolia.base.org';
 
-/**
- * SparsityApp struct from the registry contract
- */
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+const WORD_BYTES = 32;
+
+// Function selectors
+const SELECTOR_GET_ACTIVE_INSTANCES = '0x8c228cbf'; // getActiveInstances(uint256)
+const SELECTOR_GET_INSTANCE_BY_WALLET = '0x9863f8a2'; // getInstanceByWallet(address)
+const SELECTOR_GET_VERSION = '0x6987b075'; // getVersion(uint256,uint256)
+
+// Latest app-registry ABI subset used by frontend.
+const REGISTRY_ABI = [
+    {
+        inputs: [{ name: 'appId', type: 'uint256' }],
+        name: 'getActiveInstances',
+        outputs: [{ name: '', type: 'address[]' }],
+        stateMutability: 'view',
+        type: 'function',
+    },
+    {
+        inputs: [{ name: 'teeWalletAddress', type: 'address' }],
+        name: 'getInstanceByWallet',
+        outputs: [
+            {
+                components: [
+                    { name: 'instanceId', type: 'uint256' },
+                    { name: 'appId', type: 'uint256' },
+                    { name: 'versionId', type: 'uint256' },
+                    { name: 'operator', type: 'address' },
+                    { name: 'instanceUrl', type: 'string' },
+                    { name: 'teePubkey', type: 'bytes' },
+                    { name: 'teeWalletAddress', type: 'address' },
+                    { name: 'zkVerified', type: 'bool' },
+                    { name: 'status', type: 'uint8' },
+                    { name: 'registeredAt', type: 'uint256' },
+                ],
+                name: '',
+                type: 'tuple',
+            },
+        ],
+        stateMutability: 'view',
+        type: 'function',
+    },
+    {
+        inputs: [
+            { name: 'appId', type: 'uint256' },
+            { name: 'versionId', type: 'uint256' },
+        ],
+        name: 'getVersion',
+        outputs: [
+            {
+                components: [
+                    { name: 'versionId', type: 'uint256' },
+                    { name: 'versionName', type: 'string' },
+                    { name: 'codeMeasurement', type: 'bytes32' },
+                    { name: 'imageUri', type: 'string' },
+                    { name: 'auditUrl', type: 'string' },
+                    { name: 'auditHash', type: 'string' },
+                    { name: 'githubRunId', type: 'string' },
+                    { name: 'status', type: 'uint8' },
+                    { name: 'enrolledAt', type: 'uint256' },
+                    { name: 'enrolledBy', type: 'address' },
+                ],
+                name: '',
+                type: 'tuple',
+            },
+        ],
+        stateMutability: 'view',
+        type: 'function',
+    },
+] as const;
+
+// Keep exported so callers can inspect the exact ABI used for frontend reads.
+export { REGISTRY_ABI };
+
 export interface SparsityApp {
-    owner: string;
+    owner: string; // selected instance operator
     appId: bigint;
     teeArch: string;
     codeMeasurement: string;
@@ -30,295 +103,246 @@ export interface SparsityApp {
         sha256: string;
         githubRunId: string;
     };
+    instanceId?: bigint;
+    versionId?: bigint;
+    activeInstanceCount?: number;
+    selectedInstanceWallet?: string;
 }
 
-// Minimal ABI for getApp function
-const REGISTRY_ABI = [
-    {
-        "inputs": [{ "name": "appId", "type": "uint256" }],
-        "name": "getApp",
-        "outputs": [
-            {
-                "components": [
-                    { "name": "owner", "type": "address" },
-                    { "name": "appId", "type": "uint256" },
-                    { "name": "teeArch", "type": "bytes32" },
-                    { "name": "codeMeasurement", "type": "bytes32" },
-                    { "name": "teePubkey", "type": "bytes" },
-                    { "name": "teeWalletAddress", "type": "address" },
-                    { "name": "appUrl", "type": "string" },
-                    { "name": "contractAddr", "type": "address" },
-                    { "name": "metadataUri", "type": "string" },
-                    { "name": "zkVerified", "type": "bool" },
-                    {
-                        "name": "buildAttestation",
-                        "type": "tuple",
-                        "components": [
-                            { "name": "url", "type": "string" },
-                            { "name": "sha256", "type": "string" },
-                            { "name": "githubRunId", "type": "string" }
-                        ]
-                    }
-                ],
-                "name": "",
-                "type": "tuple"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [{ "name": "appId", "type": "uint256" }],
-        "name": "appExists",
-        "outputs": [{ "name": "", "type": "bool" }],
-        "stateMutability": "view",
-        "type": "function"
-    }
-] as const;
-
-/**
- * Convert bytes32 to hex string
- */
-function bytes32ToHex(bytes32: string): string {
-    // If already prefixed with 0x, return as-is
-    if (bytes32.startsWith('0x')) {
-        return bytes32.toLowerCase();
-    }
-    return '0x' + bytes32.toLowerCase();
+interface RuntimeInstance {
+    instanceId: bigint;
+    appId: bigint;
+    versionId: bigint;
+    operator: string;
+    instanceUrl: string;
+    teePubkey: string;
+    teeWalletAddress: string;
+    zkVerified: boolean;
+    status: number;
+    registeredAt: bigint;
 }
 
-/**
- * Convert bytes to hex string
- */
-function bytesToHex(bytes: string | Uint8Array): string {
-    if (typeof bytes === 'string') {
-        if (bytes.startsWith('0x')) {
-            return bytes.toLowerCase();
-        }
-        return '0x' + bytes.toLowerCase();
-    }
-    return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+interface VersionInfo {
+    versionId: bigint;
+    codeMeasurement: string;
+    status: number;
 }
 
-/**
- * Fetch app information from the Nova App Registry
- * 
- * @param appId - The numeric App ID to query
- * @param registryAddress - The registry contract address (defaults to Base Sepolia registry)
- * @param rpcUrl - The RPC URL to use for the query (defaults to Base Sepolia)
- * @returns SparsityApp information or null if not found
- */
-export async function fetchAppFromRegistry(
-    appId: number | string,
-    registryAddress: string = DEFAULT_REGISTRY_ADDRESS,
-    rpcUrl: string = DEFAULT_RPC_URL
-): Promise<SparsityApp | null> {
-    const appIdNum = typeof appId === 'string' ? parseInt(appId, 10) : appId;
+function strip0x(hex: string): string {
+    return hex.startsWith('0x') ? hex.slice(2) : hex;
+}
 
-    if (isNaN(appIdNum) || appIdNum <= 0) {
-        throw new Error('Invalid App ID: must be a positive number');
+function toSafeNumber(value: bigint, field: string): number {
+    if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new Error(`Value too large for number in ${field}: ${value.toString()}`);
     }
+    return Number(value);
+}
 
-    // Encode the getApp function call
-    // Function selector: keccak256("getApp(uint256)")[0:4]
-    const functionSelector = '0x24f3a51b'; // getApp(uint256)
-    const encodedAppId = appIdNum.toString(16).padStart(64, '0');
-    const callData = functionSelector + encodedAppId;
+function readWord(data: string, byteOffset: number): string {
+    const start = byteOffset * 2;
+    const end = start + 64;
+    if (end > data.length) {
+        throw new Error(`Out-of-bounds ABI read at byte offset ${byteOffset}`);
+    }
+    return data.slice(start, end);
+}
 
-    // Make the eth_call
+function readUint(data: string, byteOffset: number): bigint {
+    return BigInt('0x' + readWord(data, byteOffset));
+}
+
+function readAddress(data: string, byteOffset: number): string {
+    return ('0x' + readWord(data, byteOffset).slice(24)).toLowerCase();
+}
+
+function readBool(data: string, byteOffset: number): boolean {
+    return readUint(data, byteOffset) !== BigInt(0);
+}
+
+function readHexBytes(data: string, byteOffset: number, byteLength: number): string {
+    const start = byteOffset * 2;
+    const end = start + byteLength * 2;
+    if (end > data.length) {
+        throw new Error(`Out-of-bounds ABI slice at byte offset ${byteOffset}`);
+    }
+    return data.slice(start, end);
+}
+
+function hexToUtf8(hex: string): string {
+    if (!hex) return '';
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length; i += 2) {
+        bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+    }
+    return new TextDecoder().decode(bytes);
+}
+
+function readDynamicString(data: string, base: number, pointerSlotOffset: number): string {
+    const rel = toSafeNumber(readUint(data, pointerSlotOffset), 'string pointer');
+    const ptr = base + rel;
+    const len = toSafeNumber(readUint(data, ptr), 'string length');
+    return hexToUtf8(readHexBytes(data, ptr + WORD_BYTES, len));
+}
+
+function readDynamicBytes(data: string, base: number, pointerSlotOffset: number): string {
+    const rel = toSafeNumber(readUint(data, pointerSlotOffset), 'bytes pointer');
+    const ptr = base + rel;
+    const len = toSafeNumber(readUint(data, ptr), 'bytes length');
+    return '0x' + readHexBytes(data, ptr + WORD_BYTES, len).toLowerCase();
+}
+
+function encodeUint256(value: number | bigint): string {
+    const n = BigInt(value);
+    if (n < BigInt(0)) throw new Error('uint256 must be non-negative');
+    return n.toString(16).padStart(64, '0');
+}
+
+function encodeAddress(address: string): string {
+    const hex = strip0x(address).toLowerCase();
+    if (!/^[0-9a-f]{40}$/.test(hex)) {
+        throw new Error(`Invalid address: ${address}`);
+    }
+    return hex.padStart(64, '0');
+}
+
+async function ethCall(to: string, data: string, rpcUrl: string): Promise<string> {
     const response = await fetch(rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             jsonrpc: '2.0',
             method: 'eth_call',
-            params: [
-                {
-                    to: registryAddress,
-                    data: callData
-                },
-                'latest'
-            ],
-            id: 1
-        })
+            params: [{ to, data }, 'latest'],
+            id: 1,
+        }),
     });
 
-    const result = await response.json();
-
-    if (result.error) {
-        throw new Error(`RPC error: ${result.error.message || JSON.stringify(result.error)}`);
+    if (!response.ok) {
+        throw new Error(`RPC HTTP error: ${response.status} ${response.statusText}`);
     }
 
-    const data = result.result;
-
-    // Check if result is empty (all zeros indicates app not found)
-    if (!data || data === '0x' || data.length < 66) {
-        return null;
+    const json = await response.json();
+    if (json.error) {
+        throw new Error(`RPC error: ${json.error.message || JSON.stringify(json.error)}`);
     }
-
-    // Decode the response manually
-    // The response is ABI-encoded tuple data
-    try {
-        const decoded = decodeGetAppResponse(data);
-
-        // Check if owner is zero address (app doesn't exist)
-        if (decoded.owner === '0x0000000000000000000000000000000000000000') {
-            return null;
-        }
-
-        return decoded;
-    } catch (error) {
-        console.error('Failed to decode registry response:', error);
-        throw new Error('Failed to decode app data from registry');
-    }
+    return typeof json.result === 'string' ? json.result : '0x';
 }
 
-/**
- * Decode the getApp response from raw hex data
- */
-function decodeGetAppResponse(hexData: string): SparsityApp {
-    // Remove 0x prefix
-    const data = hexData.startsWith('0x') ? hexData.slice(2) : hexData;
+function decodeAddressArrayResult(raw: string): string[] {
+    const data = strip0x(raw);
+    if (!data || data.length < 64) return [];
 
-    // Helper to read 32 bytes (64 hex chars) at a given offset
-    const readBytes32 = (offset: number): string => {
-        return '0x' + data.slice(offset * 2, offset * 2 + 64);
-    };
+    const arrayOffset = toSafeNumber(readUint(data, 0), 'array offset');
+    const arrayLen = toSafeNumber(readUint(data, arrayOffset), 'array length');
+    const addresses: string[] = [];
+    for (let i = 0; i < arrayLen; i += 1) {
+        const offset = arrayOffset + WORD_BYTES * (i + 1);
+        addresses.push(readAddress(data, offset));
+    }
+    return addresses;
+}
 
-    // Helper to read address (20 bytes, right-aligned in 32 bytes)
-    const readAddress = (offset: number): string => {
-        return '0x' + data.slice(offset * 2 + 24, offset * 2 + 64);
-    };
-
-    // Helper to read uint256
-    const readUint256 = (offset: number): bigint => {
-        return BigInt(readBytes32(offset));
-    };
-
-    // Helper to read bool
-    const readBool = (offset: number): boolean => {
-        return readUint256(offset) !== BigInt(0);
-    };
-
-    // Helper to read dynamic bytes at offset
-    const readDynamicBytes = (dataOffset: number): string => {
-        const pointerOffset = Number(readUint256(dataOffset));
-        const length = Number(readUint256(pointerOffset));
-        if (length === 0) return '0x';
-        const bytesData = data.slice((pointerOffset + 32) * 2, (pointerOffset + 32 + length) * 2);
-        return '0x' + bytesData;
-    };
-
-    // Helper to read dynamic string at offset
-    const readDynamicString = (dataOffset: number): string => {
-        const pointerOffset = Number(readUint256(dataOffset));
-        const length = Number(readUint256(pointerOffset));
-        if (length === 0) return '';
-        const stringHex = data.slice((pointerOffset + 32) * 2, (pointerOffset + 32 + length) * 2);
-        // Convert hex to string
-        let result = '';
-        for (let i = 0; i < stringHex.length; i += 2) {
-            result += String.fromCharCode(parseInt(stringHex.slice(i, i + 2), 16));
-        }
-        return result;
-    };
-
-    // The struct layout with tuple offset at position 0
-    // First, we need to handle the outer tuple offset
-    const tupleOffset = Number(readUint256(0));
-
-    // Now read from the tuple start
-    const base = tupleOffset;
-
-    // Fixed fields (each 32 bytes)
-    const owner = readAddress(base);                      // offset 0
-    const appId = readUint256(base + 32);                 // offset 32
-    const teeArch = readBytes32(base + 64);               // offset 64
-    const codeMeasurement = readBytes32(base + 96);       // offset 96
-    // teePubkey is dynamic - offset 128 contains pointer
-    const teePubkeyPointer = base + Number(readUint256(base + 128));
-    const teeWalletAddress = readAddress(base + 160);     // offset 160
-    // appUrl is dynamic - offset 192 contains pointer
-    const appUrlPointer = base + Number(readUint256(base + 192));
-    const contractAddr = readAddress(base + 224);         // offset 224
-    // metadataUri is dynamic - offset 256 contains pointer
-    const metadataUriPointer = base + Number(readUint256(base + 256));
-    const zkVerified = readBool(base + 288);              // offset 288
-    // buildAttestation tuple - offset 320 contains pointer
-    const buildAttestationPointer = base + Number(readUint256(base + 320));
-
-    // Read dynamic fields
-    const teePubkeyLength = Number(readUint256(teePubkeyPointer));
-    const teePubkey = teePubkeyLength > 0
-        ? '0x' + data.slice((teePubkeyPointer + 32) * 2, (teePubkeyPointer + 32 + teePubkeyLength) * 2)
-        : '0x';
-
-    const appUrlLength = Number(readUint256(appUrlPointer));
-    let appUrl = '';
-    if (appUrlLength > 0) {
-        const appUrlHex = data.slice((appUrlPointer + 32) * 2, (appUrlPointer + 32 + appUrlLength) * 2);
-        for (let i = 0; i < appUrlHex.length; i += 2) {
-            appUrl += String.fromCharCode(parseInt(appUrlHex.slice(i, i + 2), 16));
-        }
+function decodeRuntimeInstanceResult(raw: string): RuntimeInstance {
+    const data = strip0x(raw);
+    if (!data || data.length < 64) {
+        throw new Error('Empty getInstanceByWallet response');
     }
 
-    const metadataUriLength = Number(readUint256(metadataUriPointer));
-    let metadataUri = '';
-    if (metadataUriLength > 0) {
-        const metadataUriHex = data.slice((metadataUriPointer + 32) * 2, (metadataUriPointer + 32 + metadataUriLength) * 2);
-        for (let i = 0; i < metadataUriHex.length; i += 2) {
-            metadataUri += String.fromCharCode(parseInt(metadataUriHex.slice(i, i + 2), 16));
-        }
+    const base = toSafeNumber(readUint(data, 0), 'instance tuple offset');
+    return {
+        instanceId: readUint(data, base + 0),
+        appId: readUint(data, base + 32),
+        versionId: readUint(data, base + 64),
+        operator: readAddress(data, base + 96),
+        instanceUrl: readDynamicString(data, base, base + 128),
+        teePubkey: readDynamicBytes(data, base, base + 160),
+        teeWalletAddress: readAddress(data, base + 192),
+        zkVerified: readBool(data, base + 224),
+        status: toSafeNumber(readUint(data, base + 256), 'instance status'),
+        registeredAt: readUint(data, base + 288),
+    };
+}
+
+function decodeVersionResult(raw: string): VersionInfo {
+    const data = strip0x(raw);
+    if (!data || data.length < 64) {
+        throw new Error('Empty getVersion response');
     }
 
-    // Read buildAttestation tuple
-    // BuildAttestation has 3 string fields with relative pointers
-    const buildUrlPointer = buildAttestationPointer + Number(readUint256(buildAttestationPointer));
-    const buildSha256Pointer = buildAttestationPointer + Number(readUint256(buildAttestationPointer + 32));
-    const buildGithubRunIdPointer = buildAttestationPointer + Number(readUint256(buildAttestationPointer + 64));
-
-    const readStringAt = (pointer: number): string => {
-        const len = Number(readUint256(pointer));
-        if (len === 0) return '';
-        const hex = data.slice((pointer + 32) * 2, (pointer + 32 + len) * 2);
-        let result = '';
-        for (let i = 0; i < hex.length; i += 2) {
-            result += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
-        }
-        return result;
+    const base = toSafeNumber(readUint(data, 0), 'version tuple offset');
+    return {
+        versionId: readUint(data, base + 0),
+        codeMeasurement: ('0x' + readWord(data, base + 64)).toLowerCase(),
+        status: toSafeNumber(readUint(data, base + 224), 'version status'),
     };
+}
+
+export async function fetchAppFromRegistry(
+    appId: number | string,
+    registryAddress: string = DEFAULT_REGISTRY_ADDRESS,
+    rpcUrl: string = DEFAULT_RPC_URL
+): Promise<SparsityApp | null> {
+    const appIdNum = typeof appId === 'string' ? parseInt(appId, 10) : appId;
+    if (Number.isNaN(appIdNum) || appIdNum <= 0) {
+        throw new Error('Invalid App ID: must be a positive number');
+    }
+
+    const normalizedRegistry = registryAddress.toLowerCase();
+    const appIdHex = encodeUint256(appIdNum);
+
+    const activeRaw = await ethCall(
+        normalizedRegistry,
+        `${SELECTOR_GET_ACTIVE_INSTANCES}${appIdHex}`,
+        rpcUrl
+    );
+    const activeWallets = decodeAddressArrayResult(activeRaw);
+    if (activeWallets.length === 0) {
+        throw new Error(`No active instances found for app ${appIdNum}`);
+    }
+
+    const selectedWallet =
+        activeWallets[Math.floor(Math.random() * activeWallets.length)];
+
+    const instanceRaw = await ethCall(
+        normalizedRegistry,
+        `${SELECTOR_GET_INSTANCE_BY_WALLET}${encodeAddress(selectedWallet)}`,
+        rpcUrl
+    );
+    const instance = decodeRuntimeInstanceResult(instanceRaw);
+
+    if (instance.instanceId === BigInt(0) || instance.appId !== BigInt(appIdNum)) {
+        throw new Error(`Selected wallet is not a valid active instance for app ${appIdNum}`);
+    }
+
+    const versionRaw = await ethCall(
+        normalizedRegistry,
+        `${SELECTOR_GET_VERSION}${encodeUint256(instance.appId)}${encodeUint256(instance.versionId)}`,
+        rpcUrl
+    );
+    const version = decodeVersionResult(versionRaw);
 
     return {
-        owner,
-        appId,
-        teeArch: bytes32ToString(teeArch),
-        codeMeasurement,
-        teePubkey,
-        teeWalletAddress,
-        appUrl,
-        contractAddr,
-        metadataUri,
-        zkVerified,
+        owner: instance.operator,
+        appId: instance.appId,
+        teeArch: 'nitro',
+        codeMeasurement: version.codeMeasurement,
+        teePubkey: instance.teePubkey,
+        teeWalletAddress: instance.teeWalletAddress,
+        appUrl: instance.instanceUrl,
+        contractAddr: ZERO_ADDRESS,
+        metadataUri: '',
+        zkVerified: instance.zkVerified,
         buildAttestation: {
-            url: readStringAt(buildUrlPointer),
-            sha256: readStringAt(buildSha256Pointer),
-            githubRunId: readStringAt(buildGithubRunIdPointer)
-        }
+            url: '',
+            sha256: '',
+            githubRunId: '',
+        },
+        instanceId: instance.instanceId,
+        versionId: instance.versionId,
+        activeInstanceCount: activeWallets.length,
+        selectedInstanceWallet: selectedWallet,
     };
-}
-
-/**
- * Convert bytes32 to readable string (for teeArch like "nitro")
- */
-function bytes32ToString(bytes32: string): string {
-    const hex = bytes32.startsWith('0x') ? bytes32.slice(2) : bytes32;
-    let result = '';
-    for (let i = 0; i < hex.length; i += 2) {
-        const charCode = parseInt(hex.slice(i, i + 2), 16);
-        if (charCode === 0) break;
-        result += String.fromCharCode(charCode);
-    }
-    return result;
 }
 
 /**

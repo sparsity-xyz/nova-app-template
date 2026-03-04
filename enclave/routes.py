@@ -116,6 +116,29 @@ def _raise_platform_error(err: PlatformApiError) -> None:
     )
 
 
+def _app_data_store() -> Dict[str, Any]:
+    """Return the mutable in-memory data store used as a local fallback."""
+    if app_state is None:
+        return {}
+    data = app_state.setdefault("data", {})
+    if not isinstance(data, dict):
+        app_state["data"] = {}
+        data = app_state["data"]
+    return data
+
+
+def _format_request_error(err: requests.exceptions.RequestException) -> str:
+    """Best-effort extraction of upstream HTTP error context."""
+    if isinstance(err, requests.exceptions.HTTPError) and err.response is not None:
+        try:
+            body = err.response.text.strip()
+        except Exception:
+            body = ""
+        if body:
+            return f"{err} | upstream={body}"
+    return str(err)
+
+
 def _resolve_tx_signer() -> Tuple[str, str, Callable[[Dict[str, Any]], Dict[str, Any]]]:
     """
     Prefer app-wallet signer for business txs; gracefully fall back to TEE wallet signer.
@@ -720,6 +743,8 @@ def save_to_storage(req: StorageRequest):
         raise HTTPException(status_code=500, detail="Odyn not initialized")
     
     try:
+        data_store = _app_data_store()
+
         # Normalize value: if it's a string that looks like JSON, parse it first
         store_value = req.value
         if isinstance(req.value, str):
@@ -731,19 +756,34 @@ def save_to_storage(req: StorageRequest):
         # Serialize value to JSON bytes
         json_bytes = json.dumps(store_value).encode('utf-8')
         
-        # Save to S3
-        success = odyn.s3_put(req.key, json_bytes, content_type=req.content_type)
+        # Save to S3; fall back to in-memory-only mode if upstream S3 is unavailable.
+        storage_backend = "s3"
+        storage_warning: Optional[str] = None
+        try:
+            success = odyn.s3_put(req.key, json_bytes, content_type=req.content_type)
+        except requests.exceptions.RequestException as err:
+            success = True
+            storage_backend = "memory_fallback"
+            storage_warning = _format_request_error(err)
+            logger.warning(
+                "S3 put failed for key=%s, storing in memory fallback: %s",
+                req.key,
+                storage_warning,
+            )
         
         # Also update in-memory state
-        if app_state:
-            app_state["data"][req.key] = store_value
+        if data_store is not None:
+            data_store[req.key] = store_value
         
         result: Dict[str, Any] = {
             "success": success,
             "key": req.key,
             "message": "Data saved to S3 storage",
             "s3_encryption_mode": S3_ENCRYPTION_MODE,
+            "storage_backend": storage_backend,
         }
+        if storage_warning:
+            result["warning"] = f"S3 unavailable; stored in memory fallback. {storage_warning}"
 
         # Anchor state hash on-chain for user_settings key when enabled.
         if success and ANCHOR_ON_WRITE and req.key == "user_settings":
@@ -767,20 +807,39 @@ def load_from_storage(key: str):
         raise HTTPException(status_code=500, detail="Odyn not initialized")
     
     try:
-        # Try to load from S3
-        data = odyn.s3_get(key)
-        
-        if data is None:
-            raise HTTPException(status_code=404, detail=f"Key not found: {key}")
-        
-        # Parse JSON
-        value = json.loads(data.decode('utf-8'))
+        data_store = _app_data_store()
+        storage_backend = "s3"
+        storage_warning: Optional[str] = None
+
+        # Try to load from S3 first
+        try:
+            data = odyn.s3_get(key)
+        except requests.exceptions.RequestException as err:
+            data = None
+            storage_backend = "memory_fallback"
+            storage_warning = _format_request_error(err)
+            logger.warning(
+                "S3 get failed for key=%s, trying in-memory fallback: %s",
+                key,
+                storage_warning,
+            )
+
+        if data is not None:
+            value = json.loads(data.decode('utf-8'))
+        else:
+            if key not in data_store:
+                raise HTTPException(status_code=404, detail=f"Key not found: {key}")
+            value = data_store[key]
+            storage_backend = "memory_fallback"
 
         result: Dict[str, Any] = {
             "key": key,
             "value": value,
             "s3_encryption_mode": S3_ENCRYPTION_MODE,
+            "storage_backend": storage_backend,
         }
+        if storage_warning:
+            result["warning"] = f"S3 unavailable; served from memory fallback. {storage_warning}"
 
         # Verify user_settings key against on-chain state hash
         if key == "user_settings":
@@ -830,15 +889,31 @@ def list_storage():
         raise HTTPException(status_code=500, detail="Odyn not initialized")
     
     try:
-        res = odyn.s3_list()
-        keys = res.get("keys", []) if isinstance(res, dict) else res
-        return {
-            "keys": keys,
-            "count": len(keys),
-            "continuation_token": res.get("continuation_token") if isinstance(res, dict) else None,
-            "is_truncated": res.get("is_truncated") if isinstance(res, dict) else False,
-            "s3_encryption_mode": S3_ENCRYPTION_MODE,
-        }
+        try:
+            res = odyn.s3_list()
+            keys = res.get("keys", []) if isinstance(res, dict) else res
+            return {
+                "keys": keys,
+                "count": len(keys),
+                "continuation_token": res.get("continuation_token") if isinstance(res, dict) else None,
+                "is_truncated": res.get("is_truncated") if isinstance(res, dict) else False,
+                "s3_encryption_mode": S3_ENCRYPTION_MODE,
+                "storage_backend": "s3",
+            }
+        except requests.exceptions.RequestException as err:
+            data_store = _app_data_store()
+            warning = _format_request_error(err)
+            logger.warning("S3 list failed, using in-memory fallback: %s", warning)
+            keys = sorted(list(data_store.keys()))
+            return {
+                "keys": keys,
+                "count": len(keys),
+                "continuation_token": None,
+                "is_truncated": False,
+                "s3_encryption_mode": S3_ENCRYPTION_MODE,
+                "storage_backend": "memory_fallback",
+                "warning": f"S3 unavailable; listing memory fallback keys. {warning}",
+            }
     except Exception as e:
         logger.error(f"Failed to list storage: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -853,18 +928,39 @@ def delete_from_storage(key: str):
         raise HTTPException(status_code=500, detail="Odyn not initialized")
     
     try:
-        success = odyn.s3_delete(key)
-        
-        # Also remove from in-memory state
-        if app_state and key in app_state.get("data", {}):
-            del app_state["data"][key]
-        
-        return {
+        data_store = _app_data_store()
+        storage_backend = "s3"
+        storage_warning: Optional[str] = None
+
+        try:
+            success = odyn.s3_delete(key)
+        except requests.exceptions.RequestException as err:
+            success = False
+            storage_backend = "memory_fallback"
+            storage_warning = _format_request_error(err)
+            logger.warning(
+                "S3 delete failed for key=%s, deleting from in-memory fallback if present: %s",
+                key,
+                storage_warning,
+            )
+
+        removed_from_memory = key in data_store
+        if removed_from_memory:
+            del data_store[key]
+
+        if storage_backend == "memory_fallback":
+            success = removed_from_memory
+
+        result = {
             "success": success,
             "key": key,
-            "message": f"Key deleted from S3 storage",
+            "message": "Key deleted from S3 storage" if storage_backend == "s3" else "Key deleted from memory fallback",
             "s3_encryption_mode": S3_ENCRYPTION_MODE,
+            "storage_backend": storage_backend,
         }
+        if storage_warning:
+            result["warning"] = f"S3 unavailable; delete applied to memory fallback. {storage_warning}"
+        return result
     except Exception as e:
         logger.error(f"Failed to delete from storage: {e}")
         raise HTTPException(status_code=500, detail=str(e))

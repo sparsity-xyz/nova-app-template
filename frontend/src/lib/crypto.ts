@@ -10,7 +10,7 @@ import * as secp256k1 from '@noble/secp256k1';
 import { fetchAttestation, hexToBytes, type DecodedAttestation } from './attestation';
 
 export interface EncryptedPayload {
-    nonce: string;      // hex-encoded 32 bytes
+    nonce: string;      // hex-encoded 12 bytes
     public_key: string; // hex-encoded DER public key
     data: string;       // hex-encoded encrypted data
 }
@@ -142,6 +142,14 @@ function rawToDer(rawKey: Uint8Array, curve: CurveType): Uint8Array {
         der.set(rawKey, header.length);
         return der;
     }
+}
+
+function compareBytes(a: Uint8Array, b: Uint8Array): number {
+    const minLen = Math.min(a.length, b.length);
+    for (let i = 0; i < minLen; i += 1) {
+        if (a[i] !== b[i]) return a[i] - b[i];
+    }
+    return a.length - b.length;
 }
 
 /**
@@ -468,14 +476,21 @@ export class EnclaveClient {
     /**
      * Derive shared AES-256 key from ECDH.
      */
-    private async deriveSharedKey(peerPublicKeyDer: string): Promise<CryptoKey> {
+    private async deriveSharedKey(peerPublicKeyDer: string, nonceBytes: Uint8Array): Promise<CryptoKey> {
+        if (nonceBytes.length !== 12) {
+            throw new Error(`Invalid nonce length: expected 12 bytes, got ${nonceBytes.length}`);
+        }
+
         const peerKeyBytes = hexToBytes(peerPublicKeyDer);
         const peerRaw = derToRaw(peerKeyBytes, this.curve);
 
         let sharedSecret: ArrayBuffer;
+        let selfRaw: Uint8Array;
 
         if (this.curve === 'P-384') {
             if (!this.p384KeyPair) throw new Error('P-384 keys not initialized');
+            const selfRawBuffer = await crypto.subtle.exportKey('raw', this.p384KeyPair.publicKey);
+            selfRaw = new Uint8Array(selfRawBuffer);
             const peerKey = await crypto.subtle.importKey(
                 'raw', peerRaw as any, { name: 'ECDH', namedCurve: 'P-384' }, true, []
             );
@@ -484,9 +499,18 @@ export class EnclaveClient {
             );
         } else {
             if (!this.secpPrivKey) throw new Error('secp256k1 keys not initialized');
+            if (!this.secpPubKey) throw new Error('secp256k1 keys not initialized');
+            selfRaw = this.secpPubKey;
             const fullSecret = secp256k1.getSharedSecret(this.secpPrivKey, peerRaw);
             sharedSecret = fullSecret.slice(1, 33).buffer;
         }
+
+        // Enclaver HKDF salt = sorted(pub_self_raw, pub_peer_raw) || nonce
+        const sorted = compareBytes(selfRaw, peerRaw) <= 0 ? [selfRaw, peerRaw] : [peerRaw, selfRaw];
+        const salt = new Uint8Array(sorted[0].length + sorted[1].length + nonceBytes.length);
+        salt.set(sorted[0], 0);
+        salt.set(sorted[1], sorted[0].length);
+        salt.set(nonceBytes, sorted[0].length + sorted[1].length);
 
         const hkdfKey = await crypto.subtle.importKey(
             'raw', sharedSecret as any, { name: 'HKDF' }, false, ['deriveKey']
@@ -496,10 +520,8 @@ export class EnclaveClient {
             {
                 name: 'HKDF',
                 hash: 'SHA-256',
-                // Odyn uses HKDF(salt=None, info="encryption data").
-                // Using an empty salt here is required for interoperability.
-                salt: new Uint8Array(0),
-                info: new TextEncoder().encode('encryption data')
+                salt,
+                info: new TextEncoder().encode('enclaver-ecdh-aes256gcm-v1')
             },
             hkdfKey,
             { name: 'AES-GCM', length: 256 },
@@ -517,11 +539,10 @@ export class EnclaveClient {
         if (!this.serverEncryptionPublicKeyDerHex) {
             throw new Error('Missing enclave encryption public key; call connect() first');
         }
-        const aesKey = await this.deriveSharedKey(this.serverEncryptionPublicKeyDerHex);
-
-        const nonce = crypto.getRandomValues(new Uint8Array(32));
+        const nonce = crypto.getRandomValues(new Uint8Array(12));
+        const aesKey = await this.deriveSharedKey(this.serverEncryptionPublicKeyDerHex, nonce);
         const ciphertext = await crypto.subtle.encrypt(
-            { name: 'AES-GCM', iv: nonce.slice(0, 12) as any },
+            { name: 'AES-GCM', iv: nonce as any },
             aesKey,
             new TextEncoder().encode(plaintext)
         );
@@ -547,8 +568,12 @@ export class EnclaveClient {
     async decrypt(payload: { nonce: string; public_key: string; encrypted_data: string }): Promise<string> {
         if (!this.isConnected) throw new Error('Not connected');
 
-        const aesKey = await this.deriveSharedKey(payload.public_key);
-        const nonceBytes = hexToBytes(payload.nonce).slice(0, 12);
+        const rawNonce = hexToBytes(payload.nonce);
+        const nonceBytes = rawNonce.length === 32 ? rawNonce.slice(0, 12) : rawNonce;
+        if (nonceBytes.length !== 12) {
+            throw new Error(`Invalid response nonce length: ${rawNonce.length} bytes`);
+        }
+        const aesKey = await this.deriveSharedKey(payload.public_key, nonceBytes);
 
         const plaintext = await crypto.subtle.decrypt(
             { name: 'AES-GCM', iv: nonceBytes as any },

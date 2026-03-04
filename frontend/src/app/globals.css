@@ -269,6 +269,28 @@ body {
 .space-y-6 > * + * { margin-top: 1.5rem; }
 .space-y-4 > * + * { margin-top: 1rem; }
 
+/* App Template layout helpers */
+.app-template-header-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+    gap: 2rem;
+    align-items: start;
+}
+
+.app-template-connection-panel {
+    margin-top: 1.75rem;
+}
+
+@media (max-width: 1023px) {
+    .app-template-header-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .app-template-connection-panel {
+        margin-top: 1rem;
+    }
+}
+
 /* Fixed Positioning */
 .fixed { position: fixed; }
 .inset-0 { inset: 0; }
