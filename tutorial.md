@@ -137,3 +137,23 @@ In `Enclaver Features` tab:
   - Ensure KMS integration is enabled.
 - Transaction signing works but no on-chain update
   - `BROADCAST_TX=false` returns signed tx only; it does not broadcast.
+
+## 10. Module-by-module learning index
+
+For developers who want to reuse this template by capability, use the module map in [`README.md`](./README.md) section **Module Learning Map (Functionality + APIs + Implementation)**.
+
+Recommended reading order:
+
+1. **Identity & Attestation** → trust establishment and registry-based connection
+2. **Hardware Entropy** → hardware-backed randomness via Nitro NSM
+3. **Secure Echo** → encrypted request/response pattern
+4. **S3 Storage** → persistence plus runtime encryption-mode verification
+5. **KMS Demo** → deterministic key derivation + KV
+6. **App Wallet Sign** → app-scoped signing flows
+7. **Oracle Demo** → external data to on-chain update pipeline
+
+Then implement your own module by copying the same pattern:
+- add endpoint in `enclave/routes.py`
+- add platform helper in `enclave/kms_client.py` or `enclave/chain.py`
+- wire UI entry in `frontend/src/app/page.tsx`
+- define config in `enclaver.yaml` and `enclave/config.py`

@@ -281,6 +281,55 @@ body {
     margin-top: 1.75rem;
 }
 
+.connection-toast-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    overflow: auto;
+    white-space: nowrap;
+}
+
+.connection-toast-pill {
+    background: #ffffff;
+    border: 1px solid var(--emerald-100);
+    color: var(--slate-700);
+    border-radius: 9999px;
+    padding: 0.3rem 0.65rem;
+}
+
+.connection-popup-panel {
+    border: 1px solid var(--emerald-100);
+    background: var(--emerald-50);
+    border-radius: 0.9rem;
+    padding: 0.65rem 0.85rem;
+    box-shadow: 0 4px 10px rgba(16, 185, 129, 0.08);
+}
+
+.connection-popup-row {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.connection-popup-success {
+    background: var(--emerald-100);
+    border: 1px solid var(--emerald-100);
+    color: var(--emerald-700);
+    border-radius: 9999px;
+    padding: 0.3rem 0.7rem;
+    font-weight: 600;
+}
+
+.connection-popup-item {
+    background: #ffffff;
+    border: 1px solid var(--emerald-100);
+    color: var(--slate-700);
+    border-radius: 9999px;
+    padding: 0.3rem 0.65rem;
+}
+
 @media (max-width: 1023px) {
     .app-template-header-grid {
         grid-template-columns: 1fr;

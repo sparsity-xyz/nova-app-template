@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { EnclaveClient, type EncryptedCallTrace, type FetchedAttestation, type TLSConnectTrace } from '@/lib/crypto';
-import { fetchAppFromRegistry, DEFAULT_REGISTRY_ADDRESS, DEFAULT_RPC_URL, type SparsityApp, formatPubkeyPreview, formatCodeMeasurement } from '@/lib/registry';
+import { fetchAppFromRegistry, DEFAULT_REGISTRY_ADDRESS, DEFAULT_RPC_URL, type SparsityApp, formatPubkeyPreview } from '@/lib/registry';
 
 interface ConnectionStatus {
     connected: boolean;
@@ -18,10 +18,6 @@ interface ApiResponse {
     error?: string;
     type?: string;
 }
-
-// Business-chain explorer (default business chain is Ethereum mainnet)
-const ETHERSCAN_URL = 'https://etherscan.io';
-const addressLink = (addr: string) => `${ETHERSCAN_URL}/address/${addr}`;
 
 /** Reusable info box showing which Enclaver sidecar APIs a feature demonstrates. */
 function ApiInfoBox({ title, apis, description, docLink }: {
@@ -83,8 +79,9 @@ export default function Home() {
     const [echoMsg, setEchoMsg] = useState('Hello from Nova!');
     const [storageKey, setStorageKey] = useState('user_settings');
     const [storageVal, setStorageVal] = useState('{"theme": "dark"}');
-    const [encStorageKey, setEncStorageKey] = useState('secret_config');
-    const [encStorageVal, setEncStorageVal] = useState('{"apiKey": "sk-demo-123"}');
+    const [storageConfig, setStorageConfig] = useState<{ s3_encryption_mode: string; kms_required: boolean } | null>(null);
+    const [storageConfigLoading, setStorageConfigLoading] = useState(false);
+    const [storageConfigError, setStorageConfigError] = useState<string | null>(null);
     const [kmsDerivePath, setKmsDerivePath] = useState('app/session/demo');
     const [kmsDeriveContext, setKmsDeriveContext] = useState('demo');
     const [kmsDeriveLength, setKmsDeriveLength] = useState(32);
@@ -97,6 +94,7 @@ export default function Home() {
 
     // Connection mode state
     const [connectionMode, setConnectionMode] = useState<'registry' | 'direct'>('registry');
+    const [lastConnectedMode, setLastConnectedMode] = useState<'registry' | 'direct' | null>(null);
     const [appId, setAppId] = useState('');
     const [registryAddress, setRegistryAddress] = useState(DEFAULT_REGISTRY_ADDRESS);
     const [registryRpcUrl, setRegistryRpcUrl] = useState(DEFAULT_RPC_URL);
@@ -114,6 +112,38 @@ export default function Home() {
             }
         }
     }, []);
+
+    useEffect(() => {
+        if (!status.connected || activeTab !== 'storage') return;
+
+        let cancelled = false;
+        const fetchStorageConfig = async () => {
+            setStorageConfigLoading(true);
+            setStorageConfigError(null);
+            try {
+                const res = await client.call('/api/storage/config', 'GET');
+                if (!cancelled) {
+                    setStorageConfig({
+                        s3_encryption_mode: String(res?.s3_encryption_mode ?? 'unknown'),
+                        kms_required: Boolean(res?.kms_required),
+                    });
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setStorageConfigError(error instanceof Error ? error.message : 'Failed to fetch storage config');
+                }
+            } finally {
+                if (!cancelled) {
+                    setStorageConfigLoading(false);
+                }
+            }
+        };
+
+        fetchStorageConfig();
+        return () => {
+            cancelled = true;
+        };
+    }, [activeTab, client, status.connected]);
 
     const handleConnect = async () => {
         let targetUrl = status.enclaveUrl;
@@ -169,6 +199,7 @@ export default function Home() {
                 teeAddress: statusInfo.ETH_address,
                 error: undefined,
             });
+            setLastConnectedMode(connectionMode);
             setResponsesByTab(prev => ({
                 ...prev,
                 identity: {
@@ -187,6 +218,7 @@ export default function Home() {
                 connected: false,
                 error: error instanceof Error ? error.message : 'Connection failed',
             });
+            setLastConnectedMode(null);
         } finally {
             setLoading(false);
         }
@@ -258,6 +290,23 @@ export default function Home() {
         }
     };
 
+    const refreshStorageConfig = async () => {
+        if (!status.connected) return;
+        setStorageConfigLoading(true);
+        setStorageConfigError(null);
+        try {
+            const res = await client.call('/api/storage/config', 'GET');
+            setStorageConfig({
+                s3_encryption_mode: String(res?.s3_encryption_mode ?? 'unknown'),
+                kms_required: Boolean(res?.kms_required),
+            });
+        } catch (error) {
+            setStorageConfigError(error instanceof Error ? error.message : 'Failed to fetch storage config');
+        } finally {
+            setStorageConfigLoading(false);
+        }
+    };
+
     const handleViewAttestation = async () => {
         if (!status.connected) return;
         setAttestationLoading(true);
@@ -292,10 +341,9 @@ export default function Home() {
 
     const TABS = [
         { id: 'identity', label: 'Identify & Attestation', icon: '🔑' },
-        { id: 'secure-echo', label: 'Secure Echo', icon: '🔒' },
         { id: 'hardware-entropy', label: 'Hardware Entropy', icon: '🎲' },
+        { id: 'secure-echo', label: 'Secure Echo', icon: '🔒' },
         { id: 'storage', label: 'S3 Storage', icon: '📦' },
-        { id: 'enc-storage', label: 'S3 Encrypted Storage', icon: '🔐' },
         { id: 'kms-demo', label: 'KMS Demo', icon: '🗄️' },
         { id: 'app-wallet', label: 'App Wallet Sign', icon: '🗝️' },
         { id: 'oracle', label: 'Oracle Demo', icon: '🌐' },
@@ -308,6 +356,9 @@ export default function Home() {
         client.serverEncryptionPublicKey
             ? `${client.serverEncryptionPublicKey.slice(0, 18)}...${client.serverEncryptionPublicKey.slice(-18)}`
             : 'Not available (connect first)';
+    const effectiveConnectionMode = status.connected && lastConnectedMode ? lastConnectedMode : connectionMode;
+    const registryInstanceId = registryAppInfo?.instanceId ? registryAppInfo.instanceId.toString() : 'N/A';
+    const registryToastPubkey = registryAppInfo ? formatPubkeyPreview(registryAppInfo.teePubkey) : 'N/A';
 return (
     <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-sky-50 text-slate-900 p-8 font-sans">
         <header className="max-w-7xl mx-auto mb-12">
@@ -445,42 +496,30 @@ return (
                                 {status.error}
                             </div>
                         )}
-
-                        {registryAppInfo && connectionMode === 'registry' && (
-                            <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-emerald-600">✓</span>
-                                    <span className="text-xs font-semibold text-emerald-700">Registry instance selected</span>
-                                    {registryAppInfo.zkVerified && (
-                                        <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">ZK Verified</span>
-                                    )}
-                                </div>
-                                <div className="grid grid-cols-2 gap-2 text-xs">
-                                    <div>
-                                        <span className="text-slate-500">Active instances:</span>
-                                        <span className="ml-1 text-slate-700">{registryAppInfo.activeInstanceCount ?? 'N/A'}</span>
-                                    </div>
-                                    <div className="col-span-2">
-                                        <span className="text-slate-500">Selected wallet:</span>
-                                        <code className="ml-1 text-slate-700 bg-white px-1 rounded">{registryAppInfo.selectedInstanceWallet || registryAppInfo.teeWalletAddress}</code>
-                                    </div>
-                                    <div className="col-span-2">
-                                        <span className="text-slate-500">URL:</span>
-                                        <span className="ml-1 text-slate-700 break-all">{registryAppInfo.appUrl}</span>
-                                    </div>
-                                    <div>
-                                        <span className="text-slate-500">Public key:</span>
-                                        <code className="ml-1 text-slate-700 bg-white px-1 rounded">{formatPubkeyPreview(registryAppInfo.teePubkey)}</code>
-                                    </div>
-                                    <div>
-                                        <span className="text-slate-500">Measurement:</span>
-                                        <code className="ml-1 text-slate-700 bg-white px-1 rounded">{formatCodeMeasurement(registryAppInfo.codeMeasurement)}</code>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 </div>
+
+                {status.connected && (
+                    <div className="mt-4 connection-popup-panel">
+                        <div className="connection-popup-row text-xs">
+                            {effectiveConnectionMode === 'registry' && registryAppInfo ? (
+                                <>
+                                    <span className="connection-popup-success">✓ Connection Success</span>
+                                    <span className="connection-popup-item"><span className="text-slate-500">Instance ID:</span> {registryInstanceId}</span>
+                                    <span className="connection-popup-item"><span className="text-slate-500">Instance URL:</span> {registryAppInfo.appUrl}</span>
+                                    <span className="connection-popup-item"><span className="text-slate-500">Wallet Address:</span> {registryAppInfo.teeWalletAddress}</span>
+                                    <span className="connection-popup-item"><span className="text-slate-500">TEE Pubkey:</span> {registryToastPubkey}</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="connection-popup-success">✓ Connection Success</span>
+                                    <span className="connection-popup-item"><span className="text-slate-500">Wallet Address:</span> {status.teeAddress || 'N/A'}</span>
+                                    <span className="connection-popup-item"><span className="text-slate-500">TEE Pubkey:</span> {directModePubkey}</span>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
         </header>
 <main className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -505,28 +544,6 @@ return (
             </nav>
         </section>
 
-        {status.connected && (
-            <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-                <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em] mb-3">Enclave Identity</h2>
-                <div className="space-y-4">
-                    <div>
-                        <label className="text-xs text-slate-500 block mb-1">TEE Wallet Address</label>
-                        <a
-                            href={addressLink(status.teeAddress || '')}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs bg-slate-50 px-2 py-1 rounded block truncate border border-slate-200 text-blue-600 hover:text-blue-800 hover:underline"
-                        >
-                            {status.teeAddress}
-                        </a>
-                    </div>
-                    <div className="flex gap-2 text-xs">
-                        <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">Active</span>
-                        <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200">Verifiable</span>
-                    </div>
-                </div>
-            </section>
-        )}
     </div>
 
     {/* Right: Content Area */}
@@ -544,60 +561,8 @@ return (
                     />
 
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                        <h3 className="text-sm font-semibold text-slate-800 mb-3">1) App Registry / Connection Identity</h3>
-                        {connectionMode === 'registry' && registryAppInfo ? (
-                            <div className="space-y-3">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                                    <div className="bg-white border border-slate-200 rounded-xl p-3">
-                                        <p className="text-slate-500 mb-1">TEE Wallet Address</p>
-                                        <code className="text-slate-800 break-all">{registryAppInfo.teeWalletAddress}</code>
-                                    </div>
-                                    <div className="bg-white border border-slate-200 rounded-xl p-3">
-                                        <p className="text-slate-500 mb-1">TEE Public Key</p>
-                                        <code className="text-slate-800 break-all">{formatPubkeyPreview(registryAppInfo.teePubkey)}</code>
-                                    </div>
-                                    <div className="bg-white border border-slate-200 rounded-xl p-3">
-                                        <p className="text-slate-500 mb-1">Code Measurement</p>
-                                        <code className="text-slate-800 break-all">{formatCodeMeasurement(registryAppInfo.codeMeasurement)}</code>
-                                    </div>
-                                    <div className="bg-white border border-slate-200 rounded-xl p-3">
-                                        <p className="text-slate-500 mb-1">Connected URL</p>
-                                        <code className="text-slate-800 break-all">{registryAppInfo.appUrl}</code>
-                                    </div>
-                                </div>
-                                <a
-                                    href={`https://sparsity.cloud/explore/${appId}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-block text-xs text-blue-600 hover:text-blue-800 hover:underline"
-                                >
-                                    View on Sparsity Explorer (sparsity.cloud/explore/{appId}) →
-                                </a>
-                            </div>
-                        ) : connectionMode === 'direct' && status.connected ? (
-                            <div className="space-y-3">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                                    <div className="bg-white border border-slate-200 rounded-xl p-3">
-                                        <p className="text-slate-500 mb-1">TEE Wallet Address</p>
-                                        <code className="text-slate-800 break-all">{status.teeAddress || '—'}</code>
-                                    </div>
-                                    <div className="bg-white border border-slate-200 rounded-xl p-3">
-                                        <p className="text-slate-500 mb-1">TEE Public Key</p>
-                                        <code className="text-slate-800 break-all">{directModePubkey}</code>
-                                    </div>
-                                </div>
-                                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
-                                    Connected through direct URL only. This session is not verified via app-registry.
-                                </div>
-                            </div>
-                        ) : (
-                            <p className="text-sm text-slate-500 italic">Connect first to display wallet address / tee pubkey identity details.</p>
-                        )}
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                         <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-sm font-semibold text-slate-800">2) Parsed Attestation (AWS Nitro)</h3>
+                            <h3 className="text-sm font-semibold text-slate-800">Parsed Attestation (AWS Nitro)</h3>
                             <div className="flex items-center gap-3">
                                 {attestationData && (
                                     <button
@@ -881,9 +846,39 @@ return (
                     <h2 className="text-xl font-semibold mb-4">S3 Persistent Storage</h2>
                     <ApiInfoBox
                         title="Enclaver Sidecar APIs"
-                        apis={['POST /v1/s3/put', 'POST /v1/s3/get', 'POST /v1/s3/list', 'POST /v1/s3/delete']}
-                        description="Store and retrieve application data in S3 via the Enclaver sidecar. Data is scoped per-application and can be optionally anchored on-chain for integrity verification."
+                        apis={['POST /v1/s3/put', 'POST /v1/s3/get', 'POST /v1/s3/list', 'POST /v1/s3/delete', 'GET /api/storage/config']}
+                        description="Store and retrieve application data in S3 via the Enclaver sidecar. Encryption is transparent and uses the same /v1/s3/* endpoints; actual mode is controlled by Enclaver config."
                     />
+
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <p className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Storage Encryption Status</p>
+                                {storageConfigLoading ? (
+                                    <p className="text-xs text-slate-500">Checking encryption mode...</p>
+                                ) : storageConfig ? (
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${storageConfig.kms_required ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                            {storageConfig.kms_required ? 'KMS ENABLED' : 'KMS DISABLED'}
+                                        </span>
+                                        <span className="text-xs text-slate-600">mode: {storageConfig.s3_encryption_mode}</span>
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-slate-500">Unknown</p>
+                                )}
+                                {storageConfigError && (
+                                    <p className="text-xs text-red-600 mt-1">{storageConfigError}</p>
+                                )}
+                            </div>
+                            <button
+                                onClick={refreshStorageConfig}
+                                disabled={storageConfigLoading || !status.connected}
+                                className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+                            >
+                                Refresh status
+                            </button>
+                        </div>
+                    </div>
 
                     <div className="grid grid-cols-2 gap-4">
                         <div className="flex flex-col gap-2 col-span-1">
@@ -927,61 +922,6 @@ return (
                     </button>
                 </div>
             )}
-{/* ============ TAB 5: S3 Encrypted Storage ============ */ }
-{
-    activeTab === 'enc-storage' && (
-        <div className="space-y-6">
-            <h2 className="text-xl font-semibold mb-4">S3 Encrypted Storage</h2>
-            <ApiInfoBox
-                title="Enclaver Sidecar APIs"
-                apis={['POST /v1/s3/put', 'POST /v1/s3/get', 'POST /v1/encryption/encrypt', 'POST /v1/encryption/decrypt']}
-                description="Combines S3 persistent storage with the E2E encryption layer. Data is encrypted client-side before storage and decrypted on retrieval, providing an additional security boundary beyond S3-level encryption."
-            />
-
-            <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-2 col-span-1">
-                    <label className="text-sm text-slate-600">Key</label>
-                    <input
-                        className="bg-white border border-slate-300 rounded-lg px-4 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                        value={encStorageKey}
-                        onChange={(e) => setEncStorageKey(e.target.value)}
-                    />
-                </div>
-                <div className="flex flex-col gap-2 col-span-1">
-                    <label className="text-sm text-slate-600">Value (JSON/Text)</label>
-                    <input
-                        className="bg-white border border-slate-300 rounded-lg px-4 py-2 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                        value={encStorageVal}
-                        onChange={(e) => setEncStorageVal(e.target.value)}
-                    />
-                </div>
-            </div>
-            <div className="flex gap-3">
-                <button
-                    onClick={() => callApi('/api/storage', 'POST', { key: encStorageKey, value: encStorageVal }, true, 'enc-storage')}
-                    disabled={loading || !status.connected}
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-semibold shadow-sm flex-1"
-                >
-                    🔐 Encrypted Store
-                </button>
-                <button
-                    onClick={() => callApi(`/api/storage/${encStorageKey}`, 'GET', undefined, true, 'enc-storage')}
-                    disabled={loading || !status.connected}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-2 rounded-lg font-semibold flex-1"
-                >
-                    🔐 Encrypted Retrieve
-                </button>
-            </div>
-            <button
-                onClick={() => callApi('/api/storage', 'GET', undefined, true, 'enc-storage')}
-                className="text-sm text-slate-500 hover:text-slate-700"
-            >
-                List encrypted keys...
-            </button>
-        </div>
-    )
-}
-
 {/* ============ TAB 6: KMS Demo ============ */ }
 {
     activeTab === 'kms-demo' && (
@@ -1135,7 +1075,7 @@ return (
                         <button
                             onClick={() => callApi('/api/app-wallet/sign', 'POST', { message: appWalletMessage }, false, 'app-wallet')}
                             disabled={loading || !status.connected}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-semibold text-sm whitespace-nowrap disabled:opacity-50"
+                            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-6 py-2 rounded-lg font-semibold text-sm whitespace-nowrap shadow-sm disabled:opacity-50"
                         >
                             Sign Message
                         </button>
@@ -1204,7 +1144,7 @@ return (
 
 {/* ============ Universal Response Viewer ============ */ }
 {
-    activeResponse && (
+    activeResponse && activeResponse.type !== 'Connection' && (
         <div className="mt-8 border-t border-slate-200 pt-8 animate-in fade-in slide-in-from-top-4 duration-300">
             <div className="flex justify-between items-center mb-3">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">

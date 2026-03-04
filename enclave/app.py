@@ -34,7 +34,7 @@ from typing import Optional
 from web3 import Web3
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -180,6 +180,34 @@ class AppStatus(BaseModel):
 def health_check():
     """Health check endpoint for load balancers."""
     return {"status": "healthy"}
+
+
+@app.get("/")
+def root_overview(request: Request):
+    """Simple app landing payload with frontend URL and API overview."""
+    base_url = str(request.base_url).rstrip("/")
+    return {
+        "app": "Nova App Template",
+        "message": "Frontend UI and API are ready.",
+        "frontend": {
+            "primary_url": f"{base_url}/frontend",
+            "note": "If Next.js frontend is hosted separately, use that deployed frontend URL instead.",
+        },
+        "api_overview": [
+            {"endpoint": "GET /health", "description": "Health check"},
+            {"endpoint": "GET /status", "description": "TEE/app runtime status"},
+            {"endpoint": "POST /.well-known/attestation", "description": "Public Nitro attestation document"},
+            {"endpoint": "GET /api/encryption/public_key", "description": "TEE encryption public key"},
+            {"endpoint": "POST /api/echo", "description": "Secure echo demo"},
+            {"endpoint": "GET /api/random", "description": "Nitro hardware entropy demo"},
+            {"endpoint": "POST /api/storage", "description": "Store value to S3"},
+            {"endpoint": "GET /api/storage/{key}", "description": "Read value from S3"},
+            {"endpoint": "GET /api/storage/config", "description": "S3 encryption mode diagnostics"},
+            {"endpoint": "GET /api/app-wallet/address", "description": "Get app wallet address"},
+            {"endpoint": "POST /api/app-wallet/sign", "description": "Sign message with app wallet"},
+            {"endpoint": "GET /api/enclaver/features", "description": "Enclaver capability snapshot"},
+        ],
+    }
 
 @app.get("/status", response_model=AppStatus)
 def get_status():
