@@ -1,70 +1,68 @@
 # Nova App Template
 
 ## 1. Introduction
-The **Nova App Template** is a production-ready starter kit designed to help developers quickly build and deploy applications on the Nova TEE (Trusted Execution Environment) Platform. It serves as the perfect starting point for your app development, showcasing the core capabilities of the Nova platform, including KMS integration, secure storage, cross-chain interactions, and remote attestation.
+This repository is a Nova app example with:
+- FastAPI backend in [`enclave/`](./enclave)
+- Next.js frontend panel in [`frontend/`](./frontend)
+- Example contracts in [`contracts/`](./contracts)
+- Repo `enclaver.yaml` template (portal can parse listening port from it)
+
+The backend includes public endpoints (`/health`, `/status`, `/.well-known/attestation`) and `/api/*` demo endpoints for KMS, app-wallet, storage, encryption, oracle, and event monitoring.
 
 ## 2. Features Included
-This template comes pre-configured with several key features to demonstrate Nova's capabilities:
-- **Verifiable Enclave Identity**: Out-of-the-box AWS Nitro attestation and TEE enclave wallet.
-- **End-to-End Encryption**: Secure client-to-enclave communication using ECDH and AES-GCM.
-- **Dual-Chain Topology**: Support for interacting with multiple networks simultaneously. By default, it uses Base Sepolia (`84532`) for KMS authorization/registry and Ethereum Mainnet (`1`) for business logic.
-- **KMS Integration**: Easily derive keys and securely store/retrieve key-value pairs via the App Backend (`/api/kms/derive`, `/api/kms/kv/*`).
-- **App Wallet Application**: Application-specific wallets with API endpoints for address retrieval, message signing, and transaction signing (`/api/app-wallet/*`). Includes a smart fallback to the TEE wallet signer if the app-wallet endpoint is unavailable.
-- **Encrypted S3 Persistence**: State anchoring and transparently encrypted S3 storage (`storage.s3.encryption.mode: kms`).
-- **Built-in Frontend**: A React-based UI panel to quickly validate KMS, App Wallet, E2E encryption, and other enclave features.
+- **Attestation + Identity**: Fetch Nitro attestation and TEE wallet identity.
+- **E2E Encryption Demo**: ECDH + AES-GCM request/response flow.
+- **Dual-Chain Defaults**: Auth chain Base Sepolia (`84532`) and business chain Ethereum mainnet (`1`) in template config.
+- **KMS + KV APIs**: `/api/kms/derive`, `/api/kms/kv/get|put|delete`.
+- **App Wallet APIs**: `/api/app-wallet/address|sign|sign-tx`.
+- **S3 Storage APIs**: `/api/storage*` plus `/api/storage/config`.
+- **Frontend Test Panel**: One-page UI to exercise all demo APIs.
 
-## 3. Deployment on Nova Platform
-To deploy this template to the Nova platform, you will use the Nova Platform interface. Here is how to prepare and deploy your app:
+## 3. Deploy on Nova Platform (Current Flow)
 
-### 3.1 Pre-deployment Configuration
-Before building, ensure you have updated the necessary configuration files in your repository fork:
-- **`enclaver.yaml`**: Update `kms_integration.kms_app_id`, `kms_integration.nova_app_registry`, `storage.s3.bucket`, `storage.s3.prefix`, and `helios_rpc.chains[*].execution_rpc`.
-- **`enclave/config.py`**: Update `CONTRACT_ADDRESS`, `APP_ID`, `APP_VERSION_ID`, and set `BROADCAST_TX` as needed.
+### 3.1 Create App
+1. Open **Apps** in Nova portal and click **Create App**.
+2. Fill basic fields (`name`, `repo_url`, optional `description`, `metadata_uri`, `app_contract_addr`).
+3. Configure advanced options in the form (for example app listening port, KMS/App Wallet/S3/Helios toggles, chain selection).
+4. Submit. The platform creates an app and assigns `sqid`.
 
-### 3.2 Create App
-1. Go to the Nova Platform portal and navigate to the **Apps** section.
-2. Click **Create App**.
-3. **App Name**: Provide a name for your application (e.g., `My Nova App`).
-4. **Description**: Briefly describe your application.
-5. After creation, you will receive an **App ID**. Update your `enclave/config.py` and `enclaver.yaml` with this ID and push the changes to your repository.
+### 3.2 Create Version (Build)
+1. Open the app detail page, then open **Versions**.
+2. Click **+ New Version**.
+3. Submit `git_ref` and semantic `version` (for example `main` and `1.0.0`).
+4. Wait for build status to become `success`.
 
-### 3.3 Build Version
-1. Navigate to your App's detail page and go to the **Builds** or **Versions** tab.
-2. Click **Create Build**.
-3. **Version Tag**: Set a version identifier (e.g., `v1.0.0`).
-4. **Git Repository**: Provide the Git URL to your fork of this `app-template`.
-5. **Git Branch/Commit**: Specify the branch name (e.g., `main`) or commit hash.
-6. Submit the build. The system will build your Docker image, wrap it into an enclave (`make build-enclave`), and generate the enclave measurements (PCRs).
+Notes aligned with control-plane implementation:
+- Repository URL is taken from the app record created in step 3.1.
+- Build input is `git_ref + version`; there is no extra repository field in the build form.
+- Control-plane generates `nova-build.yaml` and `enclaver.yaml` in app-hub from app settings before triggering workflow.
 
-### 3.4 Deploy Version
-1. Go to the **Deployments** section for your App.
-2. Click **Create Deployment**.
-3. **Select Version**: Choose the version you successfully built in the previous step.
-4. **Environment Variables**: Inject any secure environment variables required at runtime (e.g., AWS S3 credentials like `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`).
-5. **Deploy**: Start your application. Your app will securely boot within a Nova TEE node.
+### 3.3 Deploy Version
+1. In **Versions**, choose a successful version and click **Deploy this version**.
+2. In deploy modal, choose `region` and `tier` (`standard` or `performance`).
+3. Submit deployment and track state transitions in **Deployments**.
 
-## 4. Using the App-Template Frontend
-The template includes a built-in frontend for testing APIs and validating enclave behaviors locally or after deployment.
+Notes aligned with portal/API:
+- Deploy request fields are `build_id`, `region`, optional `tier`, optional `app_contract_addr`.
+- Current deploy UI has no environment-variable input section.
 
-### Local Development Quick Start
+## 4. Local Development Quick Start
 ```bash
-# 1) Start the frontend development server
+# 1) Start frontend dev server
 make dev-frontend
 
-# 2) Build frontend static assets into the enclave bundle
+# 2) Build frontend static assets for backend serving
 make build-frontend
 
-# 3) Start the Python backend locally (mocking TEE features)
+# 3) Start backend locally (IN_ENCLAVE=false)
 make dev-backend
 ```
-Once the backend is running, it will serve:
+Backend serves:
 - **API Endpoint:** `http://localhost:8000`
 - **UI Dashboard:** `http://localhost:8000/frontend/`
 
-The frontend dashboard provides tabs for:
-- **KMS & App Wallet**: Quickly test KMS key derivation and App Wallet signatures.
-- **Enclaver Features**: Run one-click end-to-end checks across multi-chain RPCs, S3 encryption, and app-wallet availability.
-- **Storage**: Test state anchoring and encrypted KV operations.
+Platform-managed deploy note:
+- Actual platform builds/deployments use control-plane generated app-hub `enclaver.yaml` from app settings.
 
 ## 5. Module Learning Map (Functionality + APIs + Implementation)
 
@@ -175,7 +173,7 @@ This section is intended for developers who want to **learn and reuse** each mod
 - **What it demonstrates**
   - Fetching external market data in enclave
   - Building/signing/submitting chain updates
-  - Periodic scheduler + manual trigger
+  - Periodic scheduler + API trigger
 - **App APIs used**
   - `POST /api/oracle/update-now`
   - `GET /status` (for cron counters)

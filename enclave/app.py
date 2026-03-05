@@ -119,6 +119,7 @@ app = FastAPI(
 # Configure allowed origins via CORS_ORIGINS env (comma-separated) or "*".
 # If "*", any Origin is matched (via regex) so arbitrary hosts can call the API.
 # Set CORS_ALLOW_CREDENTIALS to enable cookies/authorization for cross-origin requests.
+# Note: current Nova deploy modal has no dedicated env-var input section.
 cors_origins_env = os.getenv("CORS_ORIGINS", "*")
 cors_allow_credentials = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() in ("1", "true", "yes")
 
@@ -252,6 +253,5 @@ scheduler.add_job(tasks.oracle_periodic_update, 'interval', minutes=tasks.ORACLE
 if __name__ == "__main__":
     # This port must match the "App Listening Port" value entered when 
     # creating the app on the Nova platform.
-    # If you specify ingress.listen_port in enclaver.yaml, it can be detected by nova platform automatically.
+    # The portal can parse ingress.listen_port from repo enclaver.yaml when creating an app.
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

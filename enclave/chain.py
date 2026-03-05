@@ -28,7 +28,7 @@ logger = logging.getLogger("nova-app.chain")
 CONFIRMATION_DEPTH: int = 6
 
 class Chain:
-    """Helper for interacting with the blockchain via Helios RPC."""
+    """Helper for interacting with blockchain RPC (Helios-local in enclave mode)."""
 
     DEFAULT_HELIOS_RPC = BUSINESS_CHAIN_LOCAL_RPC_URL
 

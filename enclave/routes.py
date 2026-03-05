@@ -20,7 +20,8 @@ Demo endpoints included:
     - GET  /api/info       → Get app info and state keys
     - GET  /api/random     → Generate random bytes using NSM hardware RNG
     - POST /api/storage    → Save key-value data to S3 storage
-    - GET  /api/storage    → Load key-value data from S3 storage
+    - GET  /api/storage/{key} → Load key-value data from S3 storage
+    - GET  /api/storage    → List keys from S3 storage
     - GET  /api/contract   → Read contract state (stateHash)
     - POST /api/contract/update-state → Write to contract (updateStateHash)
     - POST /api/oracle/update-now     → Fetch ETH/USD and update on-chain price

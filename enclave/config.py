@@ -6,7 +6,7 @@ This project uses a single config module so it's obvious where to set:
 - app-wallet + KMS proof defaults
 - oracle update behavior
 
-Per your request, this file does NOT read environment variables.
+This module does NOT read environment variables.
 Edit these constants directly.
 """
 

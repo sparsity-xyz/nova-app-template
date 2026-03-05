@@ -8,7 +8,7 @@ This folder contains example contracts for the template backend.
 ## Quick build
 
 ```bash
-cd app-template/contracts
+cd contracts
 forge install foundry-rs/forge-std
 forge build
 forge test
@@ -42,7 +42,7 @@ forge verify-contract \
 
 ## Registry wiring note (dual-chain template)
 
-Template defaults use:
+Template runtime defaults use:
 - Auth chain (registry/KMS): Base Sepolia
 - Business chain (contract logic): Ethereum mainnet
 

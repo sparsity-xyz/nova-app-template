@@ -1,159 +1,66 @@
-# Tutorial: Nova App Template (KMS + S3 Encryption + Dual Chain)
+# Tutorial: Nova App Template (Platform Deploy Only)
 
-This tutorial walks through the template defaults and the minimum edits needed to run it correctly.
+This tutorial only covers deploying through the Nova platform.
 
-## 1. Topology you are deploying
+## 1. Prerequisites
 
-The template intentionally splits responsibilities:
+- Nova portal account
+- A reachable Git repository URL for this app
+- (Optional) Foundry, if you also deploy the sample business contract
 
-- Auth chain (registry / KMS authz): Base Sepolia (`chain_id=84532`)
-- Business chain (app logic): Ethereum Mainnet (`chain_id=1`)
+## 2. Create App (Portal)
 
-Why:
-- App-wallet proof and KMS authorization rely on `NovaAppRegistry` on the auth chain.
-- Business contract writes/read flows stay independent on mainnet.
+1. Open Nova portal -> **Apps** -> **Create App**.
+2. Fill:
+   - `name`
+   - `repo_url`
+   - optional `description`, `metadata_uri`, `app_contract_addr`
+3. Configure advanced options in the form (app listening port, KMS/App Wallet/S3/Helios toggles, chain list).
+4. Submit and keep the returned app `sqid`.
 
-## 2. Prerequisites
+Implementation notes:
+- The portal can parse `enclaver.yaml` from your repo to prefill app listening port.
+- App settings are persisted in control-plane `advanced_json`.
 
-- Python 3.10+
-- Node.js 18+
-- Foundry (for contract deployment)
+## 3. Create Version (Build)
 
-## 3. Build and run locally
+1. Open app detail -> **Versions** -> **+ New Version**.
+2. Provide:
+   - `git_ref` (branch/tag/commit)
+   - `version` (semantic version, e.g. `1.0.0`)
+3. Trigger build and wait for status `success`.
 
-```bash
-# in app-template/
-make build-frontend
-make dev-backend
-```
+Implementation notes:
+- Build input is `git_ref + version`; repository is already bound to the app.
+- Control-plane generates app-hub `nova-build.yaml` and `enclaver.yaml` from app settings, then triggers workflow.
 
-Open:
-- `http://localhost:8000/frontend/`
+## 4. Deploy Version
 
-For enclave packaging (uses `sources.app: "nova-app-template:latest"` in `enclaver.yaml`):
+1. Select a successful version and click **Deploy this version**.
+2. Choose `region` and `tier` (`standard` or `performance`).
+3. Submit deployment and monitor state in **Deployments**.
 
-```bash
-make build-docker
-make build-enclave
-```
+Implementation notes:
+- Deploy request fields are `build_id`, `region`, optional `tier`, optional `app_contract_addr`.
+- Current deploy modal does not expose environment-variable input fields.
 
-## 4. Configure enclave runtime (`enclaver.yaml`)
+## 5. Optional On-Chain Lifecycle
 
-Required edits before real deployment:
+If your app workflow needs registry/on-chain records:
+1. Create app on-chain (`create-onchain`).
+2. Enroll build on-chain (`builds/{id}/enroll`).
+3. Generate proof (`zkproof/generate`).
+4. Register instance on-chain (`instance/register`).
 
-1. `kms_integration.kms_app_id`
-2. `kms_integration.nova_app_registry`
-3. `storage.s3.bucket`
-4. `storage.s3.prefix`
-5. `helios_rpc.chains[*].execution_rpc`
+## 6. Troubleshooting
 
-The template already sets:
-- `kms_integration.enabled: true`
-- `kms_integration.use_app_wallet: true`
-- `storage.s3.encryption.mode: kms`
-- `helios_rpc.enabled: true`
-- `helios_rpc.chains[0]` = Base Sepolia (`local_rpc_port=18545`) for auth-chain registry discovery
-- `helios_rpc.chains[1]` = Ethereum Mainnet (`local_rpc_port=18546`) for business logic
+- Build stuck or failed:
+  - Check app-hub GitHub Actions run from the version panel.
+- Deployment fails early:
+  - Confirm selected build is `success` and has `image_uri`.
+- KMS/App Wallet checks fail in app API:
+  - Verify the app was created with matching advanced toggles in portal.
 
-## 5. Configure app constants (`enclave/config.py`)
+## 7. Learning Index
 
-Set these values:
-
-```python
-CONTRACT_ADDRESS = "0xYourBusinessContract"
-BROADCAST_TX = False  # set True only after wallet funding and dry-run verification
-```
-
-Keep these defaults unless you know you need to change them:
-
-```python
-AUTH_CHAIN_RPC_URL = "https://sepolia.base.org"
-NOVA_APP_REGISTRY_ADDRESS = "0x0f68E6e699f2E972998a1EcC000c7ce103E64cc8"
-BUSINESS_CHAIN_ID = 1
-```
-
-Runtime signer behavior for business transactions:
-- app-wallet signer is attempted first
-- if unavailable, backend falls back to TEE wallet signer automatically
-
-## 6. Deploy your contract (business chain)
-
-Example (Ethereum mainnet):
-
-```bash
-cd contracts
-forge install foundry-rs/forge-std
-forge build
-
-export RPC_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR_API_KEY
-export PRIVATE_KEY=<your_private_key>
-forge script script/Deploy.s.sol:DeployScript --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --broadcast
-```
-
-If you verify the contract, use mainnet chain id:
-
-```bash
-forge verify-contract --chain-id 1 --watch --etherscan-api-key "$ETHERSCAN_API_KEY" "$APP_CONTRACT" src/ETHPriceOracleApp.sol:ETHPriceOracleApp
-```
-
-## 7. Set registry on your app contract
-
-`NovaAppRegistry` is on Base Sepolia by default in this template.
-
-```bash
-export AUTH_RPC_URL=https://sepolia.base.org
-export NOVA_REGISTRY=0x0f68E6e699f2E972998a1EcC000c7ce103E64cc8
-
-cast send "$APP_CONTRACT" "setNovaRegistry(address)" "$NOVA_REGISTRY" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
-```
-
-If you want business writes to use app-wallet as intended by this template, set it on contract:
-
-```bash
-export APP_WALLET=<address_from_/api/app-wallet/address>
-
-cast send "$APP_CONTRACT" "setAppWalletAddress(address)" "$APP_WALLET" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
-```
-
-## 8. Validate from frontend
-
-In `Enclaver Features` tab:
-
-1. Run `Check Chain Topology` (`/api/chains`) and confirm:
-   - auth chain = Base Sepolia
-   - business chain = Ethereum mainnet
-2. Run `Check S3 Encryption Config` (`/api/storage/config`) and confirm mode is `kms`.
-3. Test `KMS Derive` and `KV Put/Get/Delete`.
-4. Run `Get Address` and `Build Default Proof` for app wallet.
-5. Run `Run Full Enclaver Demo` for end-to-end smoke verification across all four capabilities.
-
-## 9. Common issues
-
-- `KMS integration not configured`
-  - Check `kms_integration.enabled=true`, `kms_app_id`, and `nova_app_registry`.
-- `KMS registry mode validation failed at startup`
-  - Ensure `helios_rpc.enabled=true` and one chain has `local_rpc_port: 18545`.
-- `storage.s3.encryption.mode=kms` startup failure
-  - Ensure KMS integration is enabled.
-- Transaction signing works but no on-chain update
-  - `BROADCAST_TX=false` returns signed tx only; it does not broadcast.
-
-## 10. Module-by-module learning index
-
-For developers who want to reuse this template by capability, use the module map in [`README.md`](./README.md) section **Module Learning Map (Functionality + APIs + Implementation)**.
-
-Recommended reading order:
-
-1. **Identity & Attestation** → trust establishment and registry-based connection
-2. **Hardware Entropy** → hardware-backed randomness via Nitro NSM
-3. **Secure Echo** → encrypted request/response pattern
-4. **S3 Storage** → persistence plus runtime encryption-mode verification
-5. **KMS Demo** → deterministic key derivation + KV
-6. **App Wallet Sign** → app-scoped signing flows
-7. **Oracle Demo** → external data to on-chain update pipeline
-
-Then implement your own module by copying the same pattern:
-- add endpoint in `enclave/routes.py`
-- add platform helper in `enclave/kms_client.py` or `enclave/chain.py`
-- wire UI entry in `frontend/src/app/page.tsx`
-- define config in `enclaver.yaml` and `enclave/config.py`
+See [`README.md`](./README.md) section **Module Learning Map (Functionality + APIs + Implementation)** for endpoint-by-endpoint learning and reuse entry points.

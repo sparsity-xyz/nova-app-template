@@ -8,7 +8,7 @@
  * 4) Query getVersion(appId, versionId) for codeMeasurement.
  */
 
-// Default registry contract address on Base Sepolia (latest proxy deployment)
+// Default registry contract address on Base Sepolia.
 export const DEFAULT_REGISTRY_ADDRESS = '0x0f68E6e699f2E972998a1EcC000c7ce103E64cc8';
 
 // Default RPC URL for Base Sepolia
@@ -22,7 +22,7 @@ const SELECTOR_GET_ACTIVE_INSTANCES = '0x8c228cbf'; // getActiveInstances(uint25
 const SELECTOR_GET_INSTANCE_BY_WALLET = '0x9863f8a2'; // getInstanceByWallet(address)
 const SELECTOR_GET_VERSION = '0x6987b075'; // getVersion(uint256,uint256)
 
-// Latest app-registry ABI subset used by frontend.
+// App-registry ABI subset used by frontend.
 const REGISTRY_ABI = [
     {
         inputs: [{ name: 'appId', type: 'uint256' }],

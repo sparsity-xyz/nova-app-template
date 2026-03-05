@@ -3,12 +3,7 @@
 Odyn SDK (odyn.py)
 =============================================================================
 
-Platform-provided interface to TEE (Trusted Execution Environment) services.
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DO NOT MODIFY THIS FILE                                                    │
-│  This is the standard SDK provided by Nova Platform.                        │
-└─────────────────────────────────────────────────────────────────────────────┘
+Template helper for calling Odyn/Enclaver internal APIs.
 
 Available Methods:
     odyn.eth_address()      → Get TEE's Ethereum address
@@ -41,7 +36,7 @@ class Odyn:
     
     Automatically detects environment via IN_ENCLAVE env var:
     - IN_ENCLAVE=true  → Production (localhost:18000)
-      - IN_ENCLAVE=false → Development (mock API)
+    - IN_ENCLAVE=false → Development (mock API)
     """
     
     # Mock API for local development (when not running in TEE)
