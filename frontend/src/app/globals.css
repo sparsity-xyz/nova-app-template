@@ -156,6 +156,8 @@ body {
 .bg-emerald-600 { background-color: var(--emerald-600); }
 .bg-sky-50 { background-color: var(--sky-50); }
 .bg-red-50 { background-color: var(--red-50); }
+.bg-red-500 { background-color: var(--red-500); }
+.bg-red-600 { background-color: var(--red-600); }
 
 .text-slate-900 { color: var(--slate-900); }
 .text-slate-800 { color: var(--slate-800); }
@@ -219,6 +221,7 @@ body {
 .hover\:bg-slate-50:hover { background-color: var(--slate-50); }
 .hover\:bg-slate-100:hover { background-color: var(--slate-100); }
 .hover\:bg-slate-200:hover { background-color: var(--slate-200); }
+.hover\:bg-red-500:hover { background-color: var(--red-500); }
 .hover\:text-blue-700:hover { color: var(--primary-700); }
 .hover\:text-emerald-700:hover { color: var(--emerald-700); }
 .hover\:text-slate-600:hover { color: var(--slate-600); }

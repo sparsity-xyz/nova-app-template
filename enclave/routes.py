@@ -30,6 +30,7 @@ Demo endpoints included:
 import json
 import logging
 import base64
+import secrets
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, TYPE_CHECKING, Callable, Tuple
 
@@ -105,15 +106,21 @@ def _require_kms_client() -> NovaKmsClient:
 def _raise_platform_error(err: PlatformApiError) -> None:
     # Keep user-actionable statuses intact; map transient upstream failures to 502.
     passthrough = {400, 401, 403, 404}
+    nonce_upstream_error = _is_kms_nonce_upstream_error(err)
     status_code = err.status_code if err.status_code in passthrough else 502
-    raise HTTPException(
-        status_code=status_code,
-        detail={
-            "path": err.path,
-            "status_code": err.status_code,
-            "message": err.detail,
-        },
-    )
+    if nonce_upstream_error:
+        status_code = 503
+
+    detail: Dict[str, Any] = {
+        "path": err.path,
+        "status_code": err.status_code,
+        "message": err.detail,
+    }
+    if nonce_upstream_error:
+        detail["error"] = "kms_nonce_endpoint_unreachable"
+        detail["hint"] = "KMS auth handshake failed when calling /nonce on the app URL. Verify ingress/domain health and retry."
+
+    raise HTTPException(status_code=status_code, detail=detail)
 
 
 def _app_data_store() -> Dict[str, Any]:
@@ -137,6 +144,56 @@ def _format_request_error(err: requests.exceptions.RequestException) -> str:
         if body:
             return f"{err} | upstream={body}"
     return str(err)
+
+
+# KMS KV value codec:
+# Upstream KMS expects base64 value payloads. We wrap user strings with a marker
+# and base64-encode before write, then decode/unwrap on read.
+_KMS_KV_VALUE_PREFIX = "NOVAAPPKMSB64V1:"
+
+
+def _encode_kms_kv_value(value: str) -> str:
+    wrapped = f"{_KMS_KV_VALUE_PREFIX}{value}"
+    return base64.b64encode(wrapped.encode("utf-8")).decode("ascii")
+
+
+def _decode_kms_kv_value(value: str) -> str:
+    if not isinstance(value, str):
+        return value
+
+    # Case 1: runtime may already decode base64 and return plaintext.
+    if value.startswith(_KMS_KV_VALUE_PREFIX):
+        return value[len(_KMS_KV_VALUE_PREFIX):]
+
+    # Case 2: runtime returns stored base64 string.
+    try:
+        decoded = base64.b64decode(value, validate=True).decode("utf-8")
+    except Exception:
+        # Keep original value if it is not valid base64 or not UTF-8 text.
+        return value
+
+    if decoded.startswith(_KMS_KV_VALUE_PREFIX):
+        return decoded[len(_KMS_KV_VALUE_PREFIX):]
+
+    # Preserve non-prefixed historical values as-is.
+    return value
+
+
+def _decode_kms_kv_get_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    if isinstance(result, dict) and isinstance(result.get("value"), str):
+        decoded = _decode_kms_kv_value(result["value"])
+        if decoded != result["value"]:
+            out = dict(result)
+            out["value"] = decoded
+            return out
+    return result
+
+
+def _is_kms_nonce_upstream_error(err: PlatformApiError) -> bool:
+    if not isinstance(err.detail, str):
+        return False
+    detail_lower = err.detail.lower()
+    return "/nonce" in detail_lower and "error sending request for url" in detail_lower
 
 
 def _resolve_tx_signer() -> Tuple[str, str, Callable[[Dict[str, Any]], Dict[str, Any]]]:
@@ -244,6 +301,21 @@ class AppWalletSignRequest(BaseModel):
 # =============================================================================
 # TEE Identity & Cryptography Endpoints
 # =============================================================================
+
+@public_router.get("/nonce")
+def get_public_nonce():
+    """
+    Public nonce endpoint used by certain KMS auth handshakes.
+    """
+    return {"nonce": secrets.token_urlsafe(24)}
+
+
+@public_router.post("/nonce")
+def post_public_nonce():
+    """
+    POST variant of public nonce endpoint.
+    """
+    return {"nonce": secrets.token_urlsafe(24)}
 
 @router.get("/attestation")
 def get_attestation(nonce: str = ""):
@@ -572,8 +644,16 @@ def kms_kv_get(req: KmsKvGetRequest):
     """
     client = _require_kms_client()
     try:
-        return client.kv_get(key=req.key)
+        result = client.kv_get(key=req.key)
+        return _decode_kms_kv_get_result(result)
     except PlatformApiError as err:
+        # KMS auth nonce fetch can fail transiently; retry once before surfacing.
+        if _is_kms_nonce_upstream_error(err):
+            try:
+                retry_result = client.kv_get(key=req.key)
+                return _decode_kms_kv_get_result(retry_result)
+            except PlatformApiError as retry_err:
+                _raise_platform_error(retry_err)
         _raise_platform_error(err)
 
 
@@ -585,7 +665,8 @@ def kms_kv_put(req: KmsKvPutRequest):
     """
     client = _require_kms_client()
     try:
-        return client.kv_put(key=req.key, value=req.value, ttl_ms=req.ttl_ms)
+        encoded_value = _encode_kms_kv_value(req.value)
+        return client.kv_put(key=req.key, value=encoded_value, ttl_ms=req.ttl_ms)
     except PlatformApiError as err:
         _raise_platform_error(err)
 
