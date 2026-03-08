@@ -5,6 +5,11 @@ Background Tasks (tasks.py)
 
 Define your periodic background jobs here.
 
+This module should keep task scheduling and app-specific background logic.
+Reuse the shared `Odyn` instance passed from `app.py` for platform services,
+and keep reusable RPC transport logic in `nova_python_sdk.rpc` via
+`chain.py`.
+
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  MODIFY THIS FILE                                                           │
 │  Add your own background tasks / cron jobs here.                            │
@@ -13,7 +18,8 @@ Define your periodic background jobs here.
 How it works:
     - background_task() is called every 5 minutes by the scheduler
     - You can access app_state and odyn after init() is called
-    - Modify the interval in app.py if needed
+    - Scheduler intervals are configured in app.py
+    - Keep business-chain contract helpers in chain.py instead of duplicating RPC wiring here
 
 Example use cases:
     - Auto-save state to S3 with hash on-chain
@@ -40,9 +46,8 @@ from config import (
     ORACLE_EVENT_POLL_LOOKBACK_BLOCKS,
 )
 
-# Type hint for Odyn (actual import would cause circular dependency)
 if TYPE_CHECKING:
-    from odyn import Odyn
+    from nova_python_sdk.odyn import Odyn
 
 logger = logging.getLogger("nova-app.tasks")
 
@@ -61,12 +66,12 @@ odyn: Optional["Odyn"] = None
 def init(state_ref: dict, odyn_ref: "Odyn"):
     """
     Initialize the tasks module with shared references.
-    
+
     Called by app.py during startup. Do not call directly.
-    
+
     Args:
-        state_ref: Reference to app_state dict
-        odyn_ref: Reference to Odyn instance
+        state_ref: Shared mutable app state dict.
+        odyn_ref: Shared Odyn client already configured for current runtime.
     """
     global app_state, odyn
     app_state = state_ref

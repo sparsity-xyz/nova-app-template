@@ -13,17 +13,22 @@ This is the main entry point for your Nova TEE application.
 └─────────────────────────────────────────────────────────────────────────────┘
 
 Architecture:
-    ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-    │   routes.py  │     │   tasks.py   │     │   odyn.py    │
-    │ Public + /api│     │  (User Cron) │     │ (Platform)   │
-    └──────┬───────┘     └──────┬───────┘     └──────┬───────┘
-        │                    │                    │
-        └────────────────────┼────────────────────┘
-                    │
-                ┌──────┴───────┐
-                │    app.py    │
-                │  (Framework) │
-                └──────────────┘
+    ┌──────────────┐     ┌──────────────┐     ┌───────────────────────┐
+    │   routes.py  │     │   tasks.py   │     │  nova_python_sdk/*    │
+    │ Public + /api│     │  (User Cron) │     │ Canonical platform    │
+    └──────┬───────┘     └──────┬───────┘     │ helpers               │
+           │                    │             └───────────┬───────────┘
+           └────────────────────┼──────────────────────────┘
+                                │
+                         ┌──────┴───────┐
+                         │    app.py    │
+                         │  (Framework) │
+                         └──────────────┘
+
+`app.py` owns the shared `Odyn()` instance from `enclave/nova_python_sdk/`
+and passes it into `routes.init()` and `tasks.init()`. Keep reusable Nova /
+Enclaver API wrappers in `nova_python_sdk/`, and keep app-specific route, task,
+and contract logic in `routes.py`, `tasks.py`, and `chain.py`.
 """
 
 import logging
@@ -43,7 +48,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # Platform & User Components
-from odyn import Odyn
+from nova_python_sdk.odyn import Odyn
 import tasks
 import routes
 import config
@@ -82,7 +87,9 @@ async def lifespan(app: FastAPI):
     app.include_router(routes.public_router)
     app.include_router(routes.router)
     
-    # 3. Load persisted state from S3
+    # 3. Load persisted state from S3 via Odyn.
+    # In local mockup mode this can be unavailable; if so we log and continue
+    # with an empty state so local development still comes up cleanly.
     try:
         data_bytes = odyn.s3_get("app_state.json")
         if data_bytes:
@@ -153,7 +160,12 @@ else:
 # =============================================================================
 # Shared State & Platform SDK
 # =============================================================================
-# Odyn: Interface to TEE services (identity, attestation, encryption, state)
+# Odyn: interface to enclave runtime services.
+# Endpoint resolution order:
+#   1. explicit constructor argument
+#   2. ODYN_API_BASE_URL / ODYN_ENDPOINT
+#   3. 127.0.0.1:18000 when IN_ENCLAVE=true
+#   4. odyn.sparsity.cloud:18000 in local development
 odyn = Odyn()
 
 # Application state: Shared across routes.py and tasks.py

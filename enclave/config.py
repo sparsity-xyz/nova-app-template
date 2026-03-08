@@ -6,8 +6,14 @@ This project uses a single config module so it's obvious where to set:
 - app-wallet + KMS proof defaults
 - oracle update behavior
 
-This module does NOT read environment variables.
-Edit these constants directly.
+This module defines defaults only. Runtime overrides are resolved in
+`chain.py` and `nova_python_sdk.env`, not here.
+
+Relevant override env vars:
+- `IN_ENCLAVE`
+- `ODYN_API_BASE_URL` / `ODYN_ENDPOINT`
+- `ETHEREUM_MAINNET_RPC_URL` / `BUSINESS_CHAIN_RPC_URL`
+- `NOVA_AUTH_CHAIN_RPC_URL` / `AUTH_CHAIN_RPC_URL`
 """
 
 from __future__ import annotations
@@ -18,10 +24,17 @@ from __future__ import annotations
 # Chain where NovaAppRegistry lives (used for app-wallet proof metadata).
 AUTH_CHAIN_NAME: str = "base-sepolia"
 AUTH_CHAIN_ID: int = 84532
-AUTH_CHAIN_RPC_URL: str = "https://sepolia.base.org"
-# In enclave mode (IN_ENCLAVE=true), this app expects the auth chain Helios
-# instance to be available at this local endpoint (configured in enclaver.yaml).
-AUTH_CHAIN_LOCAL_RPC_URL: str = "http://127.0.0.1:18545"
+
+# Public RPC used as a diagnostic fallback when auth-chain Helios is unavailable.
+AUTH_CHAIN_PUBLIC_RPC_URL: str = "https://sepolia.base.org"
+
+# Local development should prefer the public mockup Helios endpoint so behavior
+# stays close to the final enclave runtime instead of bypassing Helios entirely.
+AUTH_CHAIN_MOCK_HELIOS_RPC_URL: str = "http://odyn.sparsity.cloud:18545"
+
+# In enclave mode (IN_ENCLAVE=true), the auth-chain Helios instance is expected
+# to be available at this local endpoint (configured in enclaver.yaml).
+AUTH_CHAIN_ENCLAVE_HELIOS_RPC_URL: str = "http://127.0.0.1:18545"
 
 
 
@@ -30,17 +43,26 @@ AUTH_CHAIN_LOCAL_RPC_URL: str = "http://127.0.0.1:18545"
 # Business Chain (application logic path)
 # =============================================================================
 
-# Business chain is Ethereum mainnet by default.
-BUSINESS_CHAIN_NAME: str = "ethereum-mainnet"
-BUSINESS_CHAIN_ID: int = 1
+# This template's business chain is Ethereum mainnet.
+ETHEREUM_MAINNET_CHAIN_NAME: str = "ethereum-mainnet"
+ETHEREUM_MAINNET_CHAIN_ID: int = 1
 
-# Used outside enclave mode.
-BUSINESS_CHAIN_DIRECT_RPC_URL: str = "https://ethereum-rpc.publicnode.com"
-# Secondary fallback endpoint for operators when the primary endpoint is unstable.
-BUSINESS_CHAIN_DIRECT_RPC_FALLBACK_URL: str = "https://eth.drpc.org"
-# In enclave mode (IN_ENCLAVE=true), this app expects the business chain Helios
-# instance to be available at this local endpoint (configured in enclaver.yaml).
-BUSINESS_CHAIN_LOCAL_RPC_URL: str = "http://127.0.0.1:18546"
+# Prefer the mockup Helios endpoint during local development.
+ETHEREUM_MAINNET_MOCK_HELIOS_RPC_URL: str = "http://odyn.sparsity.cloud:18546"
+
+# Public RPCs are kept as explicit operator-facing fallbacks.
+ETHEREUM_MAINNET_PUBLIC_RPC_URL: str = "https://ethereum-rpc.publicnode.com"
+ETHEREUM_MAINNET_PUBLIC_RPC_FALLBACK_URL: str = "https://eth.drpc.org"
+
+# In enclave mode (IN_ENCLAVE=true), the business-chain Helios instance is
+# expected to be available at this local endpoint (configured in enclaver.yaml).
+ETHEREUM_MAINNET_ENCLAVE_HELIOS_RPC_URL: str = "http://127.0.0.1:18546"
+
+# Generic aliases used throughout the template app logic.
+BUSINESS_CHAIN_NAME: str = ETHEREUM_MAINNET_CHAIN_NAME
+BUSINESS_CHAIN_ID: int = ETHEREUM_MAINNET_CHAIN_ID
+AUTH_CHAIN_LOCAL_RPC_URL: str = AUTH_CHAIN_ENCLAVE_HELIOS_RPC_URL
+BUSINESS_CHAIN_LOCAL_RPC_URL: str = ETHEREUM_MAINNET_ENCLAVE_HELIOS_RPC_URL
 
 # Backward-compatible alias used by existing helper functions.
 CHAIN_ID: int = BUSINESS_CHAIN_ID

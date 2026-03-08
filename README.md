@@ -61,14 +61,51 @@ Backend serves:
 - **API Endpoint:** `http://localhost:8000`
 - **UI Dashboard:** `http://localhost:8000/frontend/`
 
+Default local chain behavior:
+- Auth chain reads prefer mockup Helios at `http://odyn.sparsity.cloud:18545`
+- Business chain reads prefer mockup Helios at `http://odyn.sparsity.cloud:18546`
+- When `IN_ENCLAVE=true`, the same logic switches to enclave-local Helios on `127.0.0.1:18545` and `127.0.0.1:18546`
+
+Startup note:
+- On boot, the backend tries to restore `app_state.json` through Odyn S3. In local mockup mode this may return no state or fail transiently; the app logs `Starting fresh...` and continues with an empty in-memory state.
+
 Platform-managed deploy note:
 - Actual platform builds/deployments use control-plane generated app-hub `enclaver.yaml` from app settings.
 
-## 5. Module Learning Map (Functionality + APIs + Implementation)
+## 5. Using `nova_python_sdk`
+
+The canonical backend SDK lives in [`enclave/nova_python_sdk/`](./enclave/nova_python_sdk). Because the Docker image copies `enclave/` into the runtime image, backend modules inside [`enclave/`](./enclave) can import it directly:
+
+```python
+from nova_python_sdk.odyn import Odyn
+from nova_python_sdk.kms_client import NovaKmsClient
+from nova_python_sdk.rpc import ChainRpc
+
+odyn = Odyn()
+kms = NovaKmsClient(endpoint=odyn.endpoint)
+```
+
+Use each SDK module for one responsibility:
+- [`enclave/nova_python_sdk/odyn.py`](./enclave/nova_python_sdk/odyn.py): identity, attestation, encryption, S3, and convenience wrappers around `/v1/kms/*` and `/v1/app-wallet/*`
+- [`enclave/nova_python_sdk/kms_client.py`](./enclave/nova_python_sdk/kms_client.py): preferred thin client for KMS and app-wallet flows in request/response handlers
+- [`enclave/nova_python_sdk/rpc.py`](./enclave/nova_python_sdk/rpc.py): shared RPC transport and environment switching; keep app-specific contract logic in [`enclave/chain.py`](./enclave/chain.py)
+- [`enclave/nova_python_sdk/env.py`](./enclave/nova_python_sdk/env.py): shared `IN_ENCLAVE` and endpoint resolution helpers
+
+Runtime endpoint precedence:
+- Odyn API: `ODYN_API_BASE_URL` -> `ODYN_ENDPOINT` -> `http://127.0.0.1:18000` when `IN_ENCLAVE=true` -> `http://odyn.sparsity.cloud:18000` otherwise
+- Business chain RPC: `ETHEREUM_MAINNET_RPC_URL` -> `BUSINESS_CHAIN_RPC_URL` -> `http://127.0.0.1:18546` when `IN_ENCLAVE=true` -> `http://odyn.sparsity.cloud:18546` otherwise
+- Auth chain RPC: `NOVA_AUTH_CHAIN_RPC_URL` -> `AUTH_CHAIN_RPC_URL` -> `http://127.0.0.1:18545` when `IN_ENCLAVE=true` -> `http://odyn.sparsity.cloud:18545` otherwise
+
+Recommended template pattern:
+1. Create one shared `Odyn()` instance in [`enclave/app.py`](./enclave/app.py).
+2. In route modules, build `NovaKmsClient(endpoint=odyn.endpoint)` when you need `/v1/kms/*` or `/v1/app-wallet/*`.
+3. In [`enclave/chain.py`](./enclave/chain.py), build shared chain clients with `ChainRpc` and keep ABI selectors, contract read helpers, and transaction builders there.
+
+## 6. Module Learning Map (Functionality + APIs + Implementation)
 
 This section is intended for developers who want to **learn and reuse** each module.
 
-### 5.1 Identify & Attestation
+### 6.1 Identify & Attestation
 - **What it demonstrates**
   - Connecting to an enclave (via registry or direct URL)
   - Fetching and decoding AWS Nitro attestation
@@ -87,7 +124,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - Registry integration: [`frontend/src/lib/registry.ts`](./frontend/src/lib/registry.ts)
   - Backend routes: [`enclave/routes.py`](./enclave/routes.py)
 
-### 5.2 Hardware Entropy
+### 6.2 Hardware Entropy
 - **What it demonstrates**
   - Hardware-backed random source from Nitro Secure Module
 - **App APIs used**
@@ -98,7 +135,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - Frontend: [`frontend/src/app/page.tsx`](./frontend/src/app/page.tsx) (`hardware-entropy` tab)
   - Backend handler: [`enclave/routes.py`](./enclave/routes.py) (`/api/random`)
 
-### 5.3 Secure Echo (End-to-End Encrypted Request)
+### 6.3 Secure Echo (End-to-End Encrypted Request)
 - **What it demonstrates**
   - Client-side request encryption and enclave-side decryption
   - Encrypted response return path
@@ -113,7 +150,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - Crypto helper: [`frontend/src/lib/crypto.ts`](./frontend/src/lib/crypto.ts)
   - Backend handler: [`enclave/routes.py`](./enclave/routes.py) (`/api/echo`)
 
-### 5.4 S3 Storage (single module, encryption-aware)
+### 6.4 S3 Storage (single module, encryption-aware)
 - **What it demonstrates**
   - Put/Get/List/Delete object-style app data
   - Runtime inspection of current S3 encryption mode
@@ -133,7 +170,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - Backend handlers: [`enclave/routes.py`](./enclave/routes.py) (`/api/storage*` and `/api/storage/config`)
   - Runtime config: [`enclaver.yaml`](./enclaver.yaml) (`storage.s3.*`, `storage.s3.encryption.mode`)
 
-### 5.5 KMS Demo
+### 6.5 KMS Demo
 - **What it demonstrates**
   - Deterministic key derivation
   - KMS-backed key/value operations (put/get/delete + TTL)
@@ -150,9 +187,9 @@ This section is intended for developers who want to **learn and reuse** each mod
 - **Implementation entry points**
   - Frontend: [`frontend/src/app/page.tsx`](./frontend/src/app/page.tsx) (`kms-demo` tab)
   - Backend handlers: [`enclave/routes.py`](./enclave/routes.py) (`/api/kms/*`)
-  - KMS SDK wrapper: [`enclave/kms_client.py`](./enclave/kms_client.py)
+  - Canonical SDK: [`enclave/nova_python_sdk/kms_client.py`](./enclave/nova_python_sdk/kms_client.py)
 
-### 5.6 App Wallet Sign
+### 6.6 App Wallet Sign
 - **What it demonstrates**
   - Querying app-specific wallet address
   - EIP-191 message signing via app wallet
@@ -167,9 +204,9 @@ This section is intended for developers who want to **learn and reuse** each mod
 - **Implementation entry points**
   - Frontend: [`frontend/src/app/page.tsx`](./frontend/src/app/page.tsx) (`app-wallet` tab)
   - Backend handlers: [`enclave/routes.py`](./enclave/routes.py) (`/api/app-wallet/*`)
-  - Wallet logic: [`enclave/kms_client.py`](./enclave/kms_client.py)
+  - Wallet SDK: [`enclave/nova_python_sdk/kms_client.py`](./enclave/nova_python_sdk/kms_client.py)
 
-### 5.7 Oracle Demo (Internet → Chain)
+### 6.7 Oracle Demo (Internet → Chain)
 - **What it demonstrates**
   - Fetching external market data in enclave
   - Building/signing/submitting chain updates
@@ -182,16 +219,18 @@ This section is intended for developers who want to **learn and reuse** each mod
   - Frontend: [`frontend/src/app/page.tsx`](./frontend/src/app/page.tsx) (`oracle` tab)
   - Backend routes: [`enclave/routes.py`](./enclave/routes.py) (`/api/oracle/*`, `/api/events/*`)
   - Scheduler tasks: [`enclave/tasks.py`](./enclave/tasks.py)
-  - Chain adapters: [`enclave/chain.py`](./enclave/chain.py)
+  - App-specific chain logic: [`enclave/chain.py`](./enclave/chain.py)
+  - Shared RPC SDK: [`enclave/nova_python_sdk/rpc.py`](./enclave/nova_python_sdk/rpc.py)
 
-## 6. Reuse Guide (How to build your own module)
+## 7. Reuse Guide (How to build your own module)
 
 For any new feature, follow this template pattern:
 
 1. **Add backend endpoint** in [`enclave/routes.py`](./enclave/routes.py).
-2. **Encapsulate platform calls** (KMS/S3/App Wallet/Chain) in helper module(s) such as [`enclave/kms_client.py`](./enclave/kms_client.py) or [`enclave/chain.py`](./enclave/chain.py).
-3. **Expose a frontend card/tab** in [`frontend/src/app/page.tsx`](./frontend/src/app/page.tsx).
-4. **Document required runtime config** in [`enclaver.yaml`](./enclaver.yaml) and constants in [`enclave/config.py`](./enclave/config.py).
-5. **Optionally add periodic execution** in [`enclave/tasks.py`](./enclave/tasks.py) if the feature needs background jobs.
+2. **Reuse the canonical SDK first** from [`enclave/nova_python_sdk/`](./enclave/nova_python_sdk) for Odyn, KMS, app-wallet, and shared RPC logic.
+3. **Keep app-specific blockchain logic** in [`enclave/chain.py`](./enclave/chain.py) instead of pushing business helpers into the shared SDK.
+4. **Expose a frontend card/tab** in [`frontend/src/app/page.tsx`](./frontend/src/app/page.tsx).
+5. **Document required runtime config** in [`enclaver.yaml`](./enclaver.yaml) and constants in [`enclave/config.py`](./enclave/config.py).
+6. **Optionally add periodic execution** in [`enclave/tasks.py`](./enclave/tasks.py) if the feature needs background jobs.
 
 This keeps every capability consistent: UI demo → app API → sidecar/platform API → reproducible config.

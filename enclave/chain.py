@@ -1,176 +1,97 @@
+"""
+App-specific chain helpers built on top of `nova_python_sdk.rpc`.
+
+Keep shared RPC transport and environment switching in `nova_python_sdk/`.
+Keep contract selectors, ABI-specific reads, and transaction builders here.
+
+Runtime endpoint precedence:
+- Business chain: `ETHEREUM_MAINNET_RPC_URL` -> `BUSINESS_CHAIN_RPC_URL` ->
+  enclave-local Helios (`127.0.0.1:18546`) -> public mockup Helios
+  (`odyn.sparsity.cloud:18546`)
+- Auth chain: `NOVA_AUTH_CHAIN_RPC_URL` -> `AUTH_CHAIN_RPC_URL` ->
+  enclave-local Helios (`127.0.0.1:18545`) -> public mockup Helios
+  (`odyn.sparsity.cloud:18545`)
+"""
+
 from __future__ import annotations
 
 import json
 import logging
-import os
-import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
-import requests
+from eth_hash.auto import keccak
 from web3 import Web3
 from web3.exceptions import ContractLogicError
-from eth_hash.auto import keccak
 
 from config import (
     AUTH_CHAIN_ID,
-    AUTH_CHAIN_LOCAL_RPC_URL,
+    AUTH_CHAIN_ENCLAVE_HELIOS_RPC_URL,
+    AUTH_CHAIN_MOCK_HELIOS_RPC_URL,
     AUTH_CHAIN_NAME,
-    AUTH_CHAIN_RPC_URL,
-    BUSINESS_CHAIN_DIRECT_RPC_URL,
+    AUTH_CHAIN_PUBLIC_RPC_URL,
     BUSINESS_CHAIN_ID,
-    BUSINESS_CHAIN_LOCAL_RPC_URL,
     BUSINESS_CHAIN_NAME,
+    ETHEREUM_MAINNET_ENCLAVE_HELIOS_RPC_URL,
+    ETHEREUM_MAINNET_MOCK_HELIOS_RPC_URL,
+    ETHEREUM_MAINNET_PUBLIC_RPC_URL,
 )
+from nova_python_sdk.env import in_enclave, resolve_runtime_url
+from nova_python_sdk.rpc import ChainRpc, fetch_block_number
 
 logger = logging.getLogger("nova-app.chain")
 
-# Minimum confirmations for reorg-resistant read calls.
 CONFIRMATION_DEPTH: int = 6
 
-class Chain:
-    """Helper for interacting with blockchain RPC (Helios-local in enclave mode)."""
+_chain = ChainRpc(
+    enclave_rpc_url=ETHEREUM_MAINNET_ENCLAVE_HELIOS_RPC_URL,
+    dev_rpc_url=ETHEREUM_MAINNET_MOCK_HELIOS_RPC_URL,
+    override_env_vars=("ETHEREUM_MAINNET_RPC_URL", "BUSINESS_CHAIN_RPC_URL"),
+    logger_name="nova-app.chain",
+    confirmation_depth=CONFIRMATION_DEPTH,
+)
 
-    DEFAULT_HELIOS_RPC = BUSINESS_CHAIN_LOCAL_RPC_URL
-
-    def __init__(self, rpc_url: Optional[str] = None):
-        if rpc_url:
-            self.endpoint = rpc_url
-        else:
-            if _in_enclave():
-                # In enclave: use local trustless Helios endpoint for the business chain.
-                self.endpoint = self.DEFAULT_HELIOS_RPC
-            else:
-                # Outside enclave: default to Ethereum mainnet public RPC.
-                self.endpoint = BUSINESS_CHAIN_DIRECT_RPC_URL
-            
-        self.w3 = Web3(Web3.HTTPProvider(self.endpoint))
-
-    def wait_for_helios(self, timeout: int = 300):
-        """Wait for RPC to be ready."""
-        is_enclave = _in_enclave()
-        
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            try:
-                if self.w3.is_connected():
-                    if not is_enclave:
-                        logger.info("Business RPC connected")
-                        return True
-                        
-                    # Helios-specific sync check
-                    syncing = self.w3.eth.syncing
-                    if not syncing:
-                        block = self.w3.eth.block_number
-                        if block > 0:
-                            logger.info(f"Business-chain Helios ready at block {block} ({self.endpoint})")
-                            return True
-                logger.info(f"Waiting for {'Helios' if is_enclave else 'business'} RPC...")
-            except Exception:
-                pass
-            time.sleep(5)
-        raise TimeoutError(f"{'Helios' if is_enclave else 'business'} RPC failed to connect in time")
-
-    def get_balance(self, address: str) -> int:
-        """Get balance in wei."""
-        return self.w3.eth.get_balance(Web3.to_checksum_address(address))
-
-    def get_balance_eth(self, address: str) -> float:
-        """Get balance in ETH (convenience method)."""
-        balance_wei = self.get_balance(address)
-        return balance_wei / 1e18
-
-    def get_nonce(self, address: str) -> int:
-        return self.w3.eth.get_transaction_count(Web3.to_checksum_address(address))
-
-    def get_latest_block(self) -> int:
-        return self.w3.eth.block_number
-
-    def estimate_fees(self):
-        """Estimate EIP-1559 fees."""
-        priority_fee = self.w3.eth.max_priority_fee
-        base_fee = self.w3.eth.get_block('latest')['baseFeePerGas']
-        max_fee = (base_fee * 2) + priority_fee
-        return priority_fee, max_fee
-
-    def send_raw_transaction(self, signed_hex: str) -> str:
-        tx_hash = self.w3.eth.send_raw_transaction(signed_hex)
-        res = tx_hash.hex()
-        return res if res.startswith("0x") else f"0x{res}"
-
-    def eth_call(self, to: str, data: str, block_identifier: Any = "latest") -> bytes:
-        result = self.w3.eth.call(
-            {"to": Web3.to_checksum_address(to), "data": data},
-            block_identifier=block_identifier,
-        )
-        return bytes(result)
-
-    def eth_call_finalized(self, to: str, data: str, confirmations: int = CONFIRMATION_DEPTH) -> bytes:
-        """
-        Reorg-resistant read call using a confirmed block height.
-        Falls back to latest if confirmed block call is unavailable.
-        """
-        try:
-            latest_block = self.w3.eth.block_number
-            confirmed_block = max(0, latest_block - max(0, int(confirmations)))
-            return self.eth_call(to, data, block_identifier=confirmed_block)
-        except Exception as exc:
-            logger.debug(f"Finalized eth_call fallback to latest: {exc}")
-            return self.eth_call(to, data, block_identifier="latest")
-
-def _in_enclave() -> bool:
-    return os.getenv("IN_ENCLAVE", "False").lower() == "true"
-
-# Default chain instance
-_chain = Chain()
 
 def wait_for_helios(timeout: int = 300):
+    """Wait for the business-chain RPC to become reachable for this runtime."""
     return _chain.wait_for_helios(timeout)
-
-
-
 
 
 def auth_chain_rpc_url() -> str:
     """Preferred auth-chain RPC URL for current runtime mode."""
-    return AUTH_CHAIN_LOCAL_RPC_URL if _in_enclave() else AUTH_CHAIN_RPC_URL
+    return resolve_runtime_url(
+        override_env_vars=("NOVA_AUTH_CHAIN_RPC_URL", "AUTH_CHAIN_RPC_URL"),
+        enclave_url=AUTH_CHAIN_ENCLAVE_HELIOS_RPC_URL,
+        dev_url=AUTH_CHAIN_MOCK_HELIOS_RPC_URL,
+    )
 
 
-def _eth_block_number(rpc_url: str, timeout: int = 8) -> int:
-    payload = {"jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 1}
-    response = requests.post(rpc_url, json=payload, timeout=timeout)
-    response.raise_for_status()
-    data = response.json()
-    if data.get("error"):
-        raise RuntimeError(str(data["error"]))
-    block_hex = data.get("result")
-    if not (isinstance(block_hex, str) and block_hex.startswith("0x")):
-        raise RuntimeError(f"Invalid eth_blockNumber result: {block_hex}")
-    return int(block_hex, 16)
+def _rpc_source(endpoint: str) -> str:
+    if in_enclave():
+        return "helios-local"
+    if endpoint.startswith("http://odyn.sparsity.cloud:"):
+        return "helios-mockup"
+    return "external-rpc"
+
 
 def function_selector(signature: str) -> str:
     """Return 4-byte function selector (0x-prefixed, 8 hex chars)."""
     return "0x" + keccak(signature.encode("utf-8")).hex()[:8]
 
+
 UPDATE_STATE_SELECTOR = function_selector("updateStateHash(bytes32)")
 STATE_HASH_SELECTOR = function_selector("stateHash()")
 UPDATE_ETH_PRICE_SELECTOR = function_selector("updateETHPrice(uint256,uint256,uint256)")
+
 
 def compute_state_hash(data: dict) -> str:
     """Compute keccak256 hash of state data for on-chain anchoring."""
     json_bytes = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return "0x" + keccak(json_bytes).hex()
 
-def _rpc_call(rpc_url: str, method: str, params: list) -> Any:
-    """Helper for direct RPC calls (uses the Chain instance's w3)."""
-    # Note: rpc_url is mostly ignored now in favor of the w3 provider
-    # but we can use it to create a temporary provider if needed.
-    if rpc_url and rpc_url != _chain.endpoint:
-        temp_w3 = Web3(Web3.HTTPProvider(rpc_url))
-        return temp_w3.provider.make_request(method, params).get("result")
-    return _chain.w3.provider.make_request(method, params).get("result")
 
 def rpc_call_with_failover(method: str, params: list) -> Any:
-    return _rpc_call("", method, params)
+    """Execute a raw JSON-RPC request through the shared business-chain client."""
+    return _chain.make_request(method, params)
 
 
 def get_business_chain_status() -> Dict[str, Any]:
@@ -178,7 +99,7 @@ def get_business_chain_status() -> Dict[str, Any]:
         "chain_name": BUSINESS_CHAIN_NAME,
         "chain_id": BUSINESS_CHAIN_ID,
         "rpc_url": _chain.endpoint,
-        "source": "helios-local" if _in_enclave() else "external-rpc",
+        "source": _rpc_source(_chain.endpoint),
         "connected": False,
         "latest_block": None,
     }
@@ -188,6 +109,12 @@ def get_business_chain_status() -> Dict[str, Any]:
             status["latest_block"] = _chain.w3.eth.block_number
     except Exception as exc:
         status["error"] = str(exc)
+        if _chain.endpoint != ETHEREUM_MAINNET_PUBLIC_RPC_URL:
+            status["fallback_rpc_url"] = ETHEREUM_MAINNET_PUBLIC_RPC_URL
+            try:
+                status["fallback_latest_block"] = fetch_block_number(ETHEREUM_MAINNET_PUBLIC_RPC_URL, timeout=8)
+            except Exception as fallback_exc:
+                status["fallback_error"] = str(fallback_exc)
     return status
 
 
@@ -197,22 +124,21 @@ def get_auth_chain_status() -> Dict[str, Any]:
         "chain_name": AUTH_CHAIN_NAME,
         "chain_id": AUTH_CHAIN_ID,
         "rpc_url": primary_rpc,
-        "source": "helios-local" if _in_enclave() else "external-rpc",
+        "source": _rpc_source(primary_rpc),
         "latest_block": None,
     }
     try:
-        status["latest_block"] = _eth_block_number(primary_rpc)
+        status["latest_block"] = fetch_block_number(primary_rpc)
     except Exception as exc:
         status["error"] = str(exc)
-        # In enclave mode, local auth-chain Helios is preferred.
-        # If local endpoint is unavailable, provide external RPC visibility.
-        if _in_enclave() and primary_rpc != AUTH_CHAIN_RPC_URL:
-            status["fallback_rpc_url"] = AUTH_CHAIN_RPC_URL
+        if primary_rpc != AUTH_CHAIN_PUBLIC_RPC_URL:
+            status["fallback_rpc_url"] = AUTH_CHAIN_PUBLIC_RPC_URL
             try:
-                status["fallback_latest_block"] = _eth_block_number(AUTH_CHAIN_RPC_URL, timeout=8)
+                status["fallback_latest_block"] = fetch_block_number(AUTH_CHAIN_PUBLIC_RPC_URL, timeout=8)
             except Exception as fallback_exc:
                 status["fallback_error"] = str(fallback_exc)
     return status
+
 
 def sign_update_ETH_price(
     *,
@@ -230,11 +156,10 @@ def sign_update_ETH_price(
     tx_sender = Web3.to_checksum_address(sender_address or odyn.eth_address())
     contract_address = Web3.to_checksum_address(contract_address)
     w3 = _chain.w3
-    
+
     nonce = w3.eth.get_transaction_count(tx_sender)
     priority_fee, max_fee = _chain.estimate_fees()
 
-    # ABI encode
     request_id_encoded = hex(request_id)[2:].zfill(64)
     price_usd_encoded = hex(price_usd)[2:].zfill(64)
     updated_at_encoded = hex(updated_at)[2:].zfill(64)
@@ -246,7 +171,7 @@ def sign_update_ETH_price(
         "nonce": hex(nonce),
         "max_priority_fee_per_gas": hex(priority_fee),
         "max_fee_per_gas": hex(max_fee),
-        "gas_limit": "0x30D40", # 200k fallback
+        "gas_limit": "0x30D40",
         "to": contract_address,
         "value": "0x0",
         "data": data,
@@ -264,6 +189,7 @@ def sign_update_ETH_price(
         data=data,
         signer_kind=signer_kind,
     )
+
 
 def sign_update_state_hash(
     *,
@@ -280,7 +206,7 @@ def sign_update_state_hash(
     tx_sender = Web3.to_checksum_address(sender_address or odyn.eth_address())
     contract_address = Web3.to_checksum_address(contract_address)
     w3 = _chain.w3
-    
+
     nonce = w3.eth.get_transaction_count(tx_sender)
     priority_fee, max_fee = _chain.estimate_fees()
 
@@ -293,7 +219,7 @@ def sign_update_state_hash(
         "nonce": hex(nonce),
         "max_priority_fee_per_gas": hex(priority_fee),
         "max_fee_per_gas": hex(max_fee),
-        "gas_limit": "0x30D40", # 200k fallback
+        "gas_limit": "0x30D40",
         "to": contract_address,
         "value": "0x0",
         "data": data,
@@ -310,6 +236,7 @@ def sign_update_state_hash(
         data=data,
         signer_kind=signer_kind,
     )
+
 
 def _broadcast_and_verify(
     *,
@@ -334,40 +261,37 @@ def _broadcast_and_verify(
         return result
 
     try:
-        # Pre-flight simulation: catch revert errors before broadcasting
         call_tx = {
             "from": tee_address,
             "to": contract_address,
             "data": data,
-            "value": 0
+            "value": 0,
         }
         try:
             w3.eth.call(call_tx, "latest")
-        except ContractLogicError as cle:
-            # ContractLogicError contains the revert reason
-            reason = str(cle)
+        except ContractLogicError as exc:
+            reason = str(exc)
             result["broadcasted"] = False
             result["broadcast_error"] = f"Contract reverted: {reason}"
-            logger.error(f"Pre-flight simulation failed: {reason}")
+            logger.error("Pre-flight simulation failed: %s", reason)
             return result
-        except Exception as sim_e:
-            # Other errors (network, etc.)
+        except Exception as exc:
             result["broadcasted"] = False
-            result["broadcast_error"] = f"Simulation error: {sim_e}"
-            logger.error(f"Pre-flight simulation failed: {sim_e}")
+            result["broadcast_error"] = f"Simulation error: {exc}"
+            logger.error("Pre-flight simulation failed: %s", exc)
             return result
 
-        # Simulation passed - safe to broadcast
         tx_hash = w3.eth.send_raw_transaction(signed["raw_transaction"])
         result["broadcasted"] = True
         result["rpc_tx_hash"] = tx_hash.hex()
-        logger.info(f"Transaction broadcasted: {tx_hash.hex()}")
-    except Exception as e:
+        logger.info("Transaction broadcasted: %s", tx_hash.hex())
+    except Exception as exc:
         result["broadcasted"] = False
-        result["broadcast_error"] = str(e)
-        logger.error(f"Broadcast failed: {e}")
+        result["broadcast_error"] = str(exc)
+        logger.error("Broadcast failed: %s", exc)
 
     return result
+
 
 def get_onchain_state_hash(*, contract_address: str) -> Optional[str]:
     """Read stateHash() from contract via eth_call."""
@@ -375,9 +299,9 @@ def get_onchain_state_hash(*, contract_address: str) -> Optional[str]:
         return None
     try:
         result = _chain.eth_call_finalized(contract_address, STATE_HASH_SELECTOR)
-        if not result or result in (b'', b'\x00'*32):
+        if not result or result in (b"", b"\x00" * 32):
             return None
         return "0x" + result.hex().replace("0x", "").zfill(64)
-    except Exception as e:
-        logger.warning(f"Failed to read on-chain state hash: {e}")
+    except Exception as exc:
+        logger.warning("Failed to read on-chain state hash: %s", exc)
         return None

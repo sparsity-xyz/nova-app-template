@@ -5,6 +5,13 @@ User Routes (routes.py)
 
 Define your custom API endpoints here.
 
+Prefer importing platform capabilities from `nova_python_sdk/`:
+    - `Odyn` for identity, attestation, encryption, and storage
+    - `NovaKmsClient` for `/v1/kms/*` and `/v1/app-wallet/*`
+
+Keep contract selectors and business-chain transaction helpers in `chain.py`,
+not in the shared SDK.
+
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  MODIFY THIS FILE                                                           │
 │  Add your own API endpoints and business logic here.                        │
@@ -12,20 +19,16 @@ Define your custom API endpoints here.
 
 How it works:
     - All routes are prefixed with /api (e.g., /api/echo)
-    - You can access app_state and odyn after init() is called
+    - Public endpoints such as `/nonce` and `/.well-known/attestation` are also defined here
+    - You can access `app_state`, `odyn`, and `kms_client` after `init()` is called
     - Use FastAPI's standard decorators (@router.get, @router.post, etc.)
 
-Demo endpoints included:
-    - POST /api/echo       → Echo back a message with TEE address
-    - GET  /api/info       → Get app info and state keys
-    - GET  /api/random     → Generate random bytes using NSM hardware RNG
-    - POST /api/storage    → Save key-value data to S3 storage
-    - GET  /api/storage/{key} → Load key-value data from S3 storage
-    - GET  /api/storage    → List keys from S3 storage
-    - GET  /api/contract   → Read contract state (stateHash)
-    - POST /api/contract/update-state → Write to contract (updateStateHash)
-    - POST /api/oracle/update-now     → Fetch ETH/USD and update on-chain price
-    - GET  /api/events/oracle         → Fetch oracle-related on-chain events
+Representative endpoint groups included:
+    - Identity + attestation
+    - Encryption + secure echo
+    - KMS + app-wallet
+    - S3-backed storage
+    - Chain diagnostics, oracle updates, and event monitoring
 """
 
 import json
@@ -65,11 +68,10 @@ from config import (
     S3_ENCRYPTION_KEY_VERSION,
     S3_ENCRYPTION_ACCEPT_PLAINTEXT,
 )
-from kms_client import NovaKmsClient, PlatformApiError
+from nova_python_sdk.kms_client import NovaKmsClient, PlatformApiError
 
-# Type hint for Odyn (actual import would cause circular dependency)
 if TYPE_CHECKING:
-    from odyn import Odyn
+    from nova_python_sdk.odyn import Odyn
 
 logger = logging.getLogger("nova-app.routes")
 
@@ -84,12 +86,12 @@ kms_client: Optional[NovaKmsClient] = None
 def init(state_ref: dict, odyn_ref: "Odyn"):
     """
     Initialize the routes module with shared references.
-    
+
     Called by app.py during startup. Do not call directly.
-    
+
     Args:
-        state_ref: Reference to app_state dict
-        odyn_ref: Reference to Odyn instance
+        state_ref: Shared mutable app state dict.
+        odyn_ref: Shared Odyn client already configured for current runtime.
     """
     global app_state, odyn, kms_client
     app_state = state_ref
