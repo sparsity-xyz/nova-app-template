@@ -35,7 +35,9 @@ import json
 import logging
 import base64
 import secrets
+import shutil
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, Dict, Any, TYPE_CHECKING, Callable, Tuple
 
 import requests
@@ -67,6 +69,10 @@ from config import (
     S3_ENCRYPTION_AAD_MODE,
     S3_ENCRYPTION_KEY_VERSION,
     S3_ENCRYPTION_ACCEPT_PLAINTEXT,
+    FILE_PROXY_ENABLED,
+    FILE_PROXY_MOUNT_NAME,
+    FILE_PROXY_MOUNT_PATH,
+    FILE_PROXY_SAMPLE_FILE,
 )
 from nova_python_sdk.kms_client import NovaKmsClient, PlatformApiError
 
@@ -147,6 +153,65 @@ def _format_request_error(err: requests.exceptions.RequestException) -> str:
         if body:
             return f"{err} | upstream={body}"
     return str(err)
+
+
+def _file_proxy_root_path() -> Path:
+    return Path(FILE_PROXY_MOUNT_PATH)
+
+
+def _file_proxy_status() -> Dict[str, Any]:
+    root = _file_proxy_root_path()
+    available = FILE_PROXY_ENABLED and root.exists() and root.is_dir()
+    usage = shutil.disk_usage(root) if available else None
+    sample_file = root / FILE_PROXY_SAMPLE_FILE if available else None
+
+    return {
+        "enabled": FILE_PROXY_ENABLED,
+        "mount_name": FILE_PROXY_MOUNT_NAME,
+        "mount_path": FILE_PROXY_MOUNT_PATH,
+        "sample_file": FILE_PROXY_SAMPLE_FILE,
+        "available": available,
+        "disk_total_bytes": usage.total if usage else None,
+        "disk_free_bytes": usage.free if usage else None,
+        "disk_used_bytes": usage.used if usage else None,
+        "sample_file_exists": sample_file.exists() if sample_file else False,
+    }
+
+
+def _require_file_proxy_root() -> Path:
+    status = _file_proxy_status()
+    if not status["enabled"]:
+        raise HTTPException(status_code=503, detail="File proxy demo is disabled in config.py")
+    if not status["available"]:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"File proxy mount {FILE_PROXY_MOUNT_PATH} is not available. "
+                "Enable file proxy during app creation and redeploy."
+            ),
+        )
+    return _file_proxy_root_path()
+
+
+def _normalize_file_proxy_relative_path(path_value: Optional[str], *, allow_root: bool = False) -> Path:
+    raw = str(path_value or "").strip()
+    if raw in {"", "."}:
+        if allow_root:
+            return Path(".")
+        raise HTTPException(status_code=400, detail="A relative file path is required")
+
+    normalized = Path(raw.lstrip("/"))
+    if any(part in {"", ".", ".."} for part in normalized.parts):
+        raise HTTPException(status_code=400, detail="Path traversal is not allowed")
+    return normalized
+
+
+def _resolve_file_proxy_path(path_value: Optional[str], *, allow_root: bool = False) -> Path:
+    root = _require_file_proxy_root()
+    relative_path = _normalize_file_proxy_relative_path(path_value, allow_root=allow_root)
+    if relative_path == Path("."):
+        return root
+    return root / relative_path
 
 
 # KMS KV value codec:
@@ -247,6 +312,12 @@ class StorageRequest(BaseModel):
     key: str
     value: Any
     content_type: Optional[str] = None
+
+
+class FileProxyWriteRequest(BaseModel):
+    path: str
+    content: str
+    append: bool = False
 
 class ContractWriteRequest(BaseModel):
     """Request to update state hash on contract."""
@@ -561,14 +632,95 @@ def get_storage_config():
     }
 
 
+@router.get("/filesystem/config")
+def get_filesystem_config():
+    """
+    Surface host-backed filesystem mount status for the file proxy demo.
+    """
+    return _file_proxy_status()
+
+
+@router.post("/filesystem/write")
+def write_filesystem_file(req: FileProxyWriteRequest):
+    """
+    Write or append UTF-8 content into the host-backed filesystem mount.
+    """
+    target = _resolve_file_proxy_path(req.path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    if req.append:
+        with open(target, "a", encoding="utf-8") as fh:
+            fh.write(req.content)
+    else:
+        target.write_text(req.content, encoding="utf-8")
+
+    return {
+        "success": True,
+        "path": req.path,
+        "absolute_path": str(target),
+        "bytes_written": len(req.content.encode("utf-8")),
+        "append": req.append,
+    }
+
+
+@router.get("/filesystem/read")
+def read_filesystem_file(path: str):
+    """
+    Read UTF-8 content from the host-backed filesystem mount.
+    """
+    target = _resolve_file_proxy_path(path)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+    if target.is_dir():
+        raise HTTPException(status_code=400, detail=f"Path is a directory: {path}")
+
+    content = target.read_text(encoding="utf-8")
+    return {
+        "path": path,
+        "absolute_path": str(target),
+        "content": content,
+        "bytes_read": len(content.encode("utf-8")),
+    }
+
+
+@router.get("/filesystem/list")
+def list_filesystem_entries(path: str = "."):
+    """
+    List files and directories inside the host-backed filesystem mount.
+    """
+    target = _resolve_file_proxy_path(path, allow_root=True)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"Directory not found: {path}")
+    if not target.is_dir():
+        raise HTTPException(status_code=400, detail=f"Path is not a directory: {path}")
+
+    entries = []
+    for entry in sorted(target.iterdir(), key=lambda item: item.name):
+        entries.append(
+            {
+                "name": entry.name,
+                "path": entry.relative_to(_require_file_proxy_root()).as_posix(),
+                "type": "directory" if entry.is_dir() else "file",
+                "size_bytes": entry.stat().st_size,
+            }
+        )
+
+    return {
+        "path": "." if path in {"", "."} else path,
+        "entries": entries,
+        "count": len(entries),
+    }
+
+
 @router.get("/enclaver/features")
 def get_enclaver_feature_snapshot():
     """
-    Snapshot for the four core enclaver capabilities used by this template:
+    Snapshot for the core enclaver capabilities used by this template:
     1) multi-chain auth/business routing
     2) S3 encryption configuration
-    3) app-wallet availability
-    4) KMS derive + KV endpoint availability
+    3) file proxy mount availability
+    4) app-wallet availability
+    5) KMS derive + KV endpoint availability
     
     This is primarily a diagnostic endpoint utilized by the frontend
     to verify platform connectivity and configuration.
@@ -622,6 +774,7 @@ def get_enclaver_feature_snapshot():
         "features": {
             "multiple_chain_support": chain_status,
             "s3_encryption_support": storage_status,
+            "file_proxy_support": get_filesystem_config(),
             "app_wallet_support": app_wallet,
             "kms_support": kms,
         }

@@ -81,6 +81,21 @@ export default function Home() {
     const [storageConfig, setStorageConfig] = useState<{ s3_encryption_mode: string; kms_required: boolean } | null>(null);
     const [storageConfigLoading, setStorageConfigLoading] = useState(false);
     const [storageConfigError, setStorageConfigError] = useState<string | null>(null);
+    const [filesystemPath, setFilesystemPath] = useState('notes/demo.txt');
+    const [filesystemContent, setFilesystemContent] = useState('Hello from Nova file proxy');
+    const [filesystemConfig, setFilesystemConfig] = useState<{
+        enabled: boolean;
+        mount_name: string;
+        mount_path: string;
+        sample_file: string;
+        available: boolean;
+        disk_total_bytes?: number | null;
+        disk_free_bytes?: number | null;
+        disk_used_bytes?: number | null;
+        sample_file_exists?: boolean;
+    } | null>(null);
+    const [filesystemConfigLoading, setFilesystemConfigLoading] = useState(false);
+    const [filesystemConfigError, setFilesystemConfigError] = useState<string | null>(null);
     const [kmsDerivePath, setKmsDerivePath] = useState('app/session/demo');
     const [kmsDeriveContext, setKmsDeriveContext] = useState('demo');
     const [kmsDeriveLength, setKmsDeriveLength] = useState(32);
@@ -162,6 +177,45 @@ export default function Home() {
         };
 
         fetchStorageConfig();
+        return () => {
+            cancelled = true;
+        };
+    }, [activeTab, client, status.connected]);
+
+    useEffect(() => {
+        if (!status.connected || activeTab !== 'filesystem') return;
+
+        let cancelled = false;
+        const fetchFilesystemConfig = async () => {
+            setFilesystemConfigLoading(true);
+            setFilesystemConfigError(null);
+            try {
+                const res = await client.call('/api/filesystem/config', 'GET');
+                if (!cancelled) {
+                    setFilesystemConfig({
+                        enabled: Boolean(res?.enabled),
+                        mount_name: String(res?.mount_name ?? 'appdata'),
+                        mount_path: String(res?.mount_path ?? '/mnt/appdata'),
+                        sample_file: String(res?.sample_file ?? 'notes/demo.txt'),
+                        available: Boolean(res?.available),
+                        disk_total_bytes: typeof res?.disk_total_bytes === 'number' ? res.disk_total_bytes : null,
+                        disk_free_bytes: typeof res?.disk_free_bytes === 'number' ? res.disk_free_bytes : null,
+                        disk_used_bytes: typeof res?.disk_used_bytes === 'number' ? res.disk_used_bytes : null,
+                        sample_file_exists: Boolean(res?.sample_file_exists),
+                    });
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setFilesystemConfigError(error instanceof Error ? error.message : 'Failed to fetch filesystem config');
+                }
+            } finally {
+                if (!cancelled) {
+                    setFilesystemConfigLoading(false);
+                }
+            }
+        };
+
+        fetchFilesystemConfig();
         return () => {
             cancelled = true;
         };
@@ -326,6 +380,42 @@ export default function Home() {
         }
     };
 
+    const refreshFilesystemConfig = async () => {
+        if (!status.connected) return;
+        setFilesystemConfigLoading(true);
+        setFilesystemConfigError(null);
+        try {
+            const res = await client.call('/api/filesystem/config', 'GET');
+            setFilesystemConfig({
+                enabled: Boolean(res?.enabled),
+                mount_name: String(res?.mount_name ?? 'appdata'),
+                mount_path: String(res?.mount_path ?? '/mnt/appdata'),
+                sample_file: String(res?.sample_file ?? 'notes/demo.txt'),
+                available: Boolean(res?.available),
+                disk_total_bytes: typeof res?.disk_total_bytes === 'number' ? res.disk_total_bytes : null,
+                disk_free_bytes: typeof res?.disk_free_bytes === 'number' ? res.disk_free_bytes : null,
+                disk_used_bytes: typeof res?.disk_used_bytes === 'number' ? res.disk_used_bytes : null,
+                sample_file_exists: Boolean(res?.sample_file_exists),
+            });
+        } catch (error) {
+            setFilesystemConfigError(error instanceof Error ? error.message : 'Failed to fetch filesystem config');
+        } finally {
+            setFilesystemConfigLoading(false);
+        }
+    };
+
+    const formatBytes = (value?: number | null) => {
+        if (typeof value !== 'number' || Number.isNaN(value)) return 'N/A';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let size = value;
+        let unitIndex = 0;
+        while (size >= 1024 && unitIndex < units.length - 1) {
+            size /= 1024;
+            unitIndex += 1;
+        }
+        return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+    };
+
     const handleViewAttestation = async () => {
         if (!status.connected) return;
         setAttestationLoading(true);
@@ -363,6 +453,7 @@ export default function Home() {
         { id: 'hardware-entropy', label: 'Hardware Entropy', icon: '🎲' },
         { id: 'secure-echo', label: 'Secure Echo', icon: '🔒' },
         { id: 'storage', label: 'S3 Storage', icon: '📦' },
+        { id: 'filesystem', label: 'File Proxy', icon: '🗂️' },
         { id: 'kms-demo', label: 'KMS Demo', icon: '🗄️' },
         { id: 'app-wallet', label: 'App Wallet Sign', icon: '🗝️' },
         { id: 'oracle', label: 'Oracle Demo', icon: '🌐' },
@@ -394,6 +485,7 @@ return (
                         <div className="flex flex-wrap gap-2 mt-4 text-xs text-slate-500">
                             <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">TLS</span>
                             <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">S3 Storage</span>
+                            <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">File Proxy</span>
                             <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">KMS</span>
                             <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">App Wallet</span>
                             <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">Hardware Entropy</span>
@@ -892,6 +984,99 @@ return (
                         className="text-sm text-slate-500 hover:text-slate-700"
                     >
                         List all stored keys...
+                    </button>
+                </div>
+            )}
+            {activeTab === 'filesystem' && (
+                <div className="space-y-6">
+                    <h2 className="text-xl font-semibold mb-4">Host-Backed Filesystem</h2>
+                    <ApiInfoBox
+                        title="Enclaver Hostfs APIs"
+                        apis={['GET /api/filesystem/config', 'POST /api/filesystem/write', 'GET /api/filesystem/read', 'GET /api/filesystem/list']}
+                        description="Demonstrates Enclaver file proxy: a host-backed loopback image is mounted into the enclave so the app can use normal file APIs."
+                    />
+
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="space-y-1">
+                                <p className="text-[10px] uppercase tracking-widest text-slate-500">Mount Status</p>
+                                {filesystemConfigLoading ? (
+                                    <p className="text-xs text-slate-500">Checking file proxy mount...</p>
+                                ) : filesystemConfig ? (
+                                    <div className="space-y-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${filesystemConfig.available ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                {filesystemConfig.available ? 'MOUNT READY' : 'MOUNT MISSING'}
+                                            </span>
+                                            <span className="text-xs text-slate-600">{filesystemConfig.mount_name} → {filesystemConfig.mount_path}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-500">
+                                            sample file: {filesystemConfig.sample_file} {filesystemConfig.sample_file_exists ? '(present)' : '(not written yet)'}
+                                        </p>
+                                        <p className="text-xs text-slate-500">
+                                            capacity: {formatBytes(filesystemConfig.disk_used_bytes)} used / {formatBytes(filesystemConfig.disk_total_bytes)} total
+                                        </p>
+                                        <p className="text-xs text-slate-500">
+                                            free space: {formatBytes(filesystemConfig.disk_free_bytes)}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-slate-500">Unknown</p>
+                                )}
+                                {filesystemConfigError && (
+                                    <p className="text-xs text-red-600 mt-1">{filesystemConfigError}</p>
+                                )}
+                            </div>
+                            <button
+                                onClick={refreshFilesystemConfig}
+                                disabled={filesystemConfigLoading || !status.connected}
+                                className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+                            >
+                                Refresh status
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-2 col-span-1">
+                            <label className="text-sm text-slate-600">Relative Path</label>
+                            <input
+                                className="bg-white border border-slate-300 rounded-lg px-4 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                value={filesystemPath}
+                                onChange={(e) => setFilesystemPath(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex flex-col gap-2 col-span-1">
+                            <label className="text-sm text-slate-600">File Content</label>
+                            <input
+                                className="bg-white border border-slate-300 rounded-lg px-4 py-2 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                                value={filesystemContent}
+                                onChange={(e) => setFilesystemContent(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => callApi('/api/filesystem/write', 'POST', { path: filesystemPath, content: filesystemContent }, false, 'filesystem')}
+                            disabled={loading || !status.connected}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-lg font-semibold shadow-sm flex-1"
+                        >
+                            Write File
+                        </button>
+                        <button
+                            onClick={() => callApi(`/api/filesystem/read?path=${encodeURIComponent(filesystemPath)}`, 'GET', undefined, false, 'filesystem')}
+                            disabled={loading || !status.connected}
+                            className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-semibold shadow-sm disabled:opacity-50 flex-1"
+                        >
+                            Read File
+                        </button>
+                    </div>
+                    <button
+                        onClick={() => callApi('/api/filesystem/list?path=.', 'GET', undefined, false, 'filesystem')}
+                        className="text-sm text-slate-500 hover:text-slate-700"
+                    >
+                        List mounted directory...
                     </button>
                 </div>
             )}

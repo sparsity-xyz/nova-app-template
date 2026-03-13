@@ -5,9 +5,9 @@ This repository is a Nova app example with:
 - FastAPI backend in [`enclave/`](./enclave)
 - Next.js frontend panel in [`frontend/`](./frontend)
 - Example contracts in [`contracts/`](./contracts)
-- Repo `enclaver.yaml` template (portal can parse listening port from it)
+- Repo `enclaver.yaml` template (portal can parse listening port and file-proxy mount config from it)
 
-The backend includes public endpoints (`/health`, `/status`, `/.well-known/attestation`) and `/api/*` demo endpoints for KMS, app-wallet, storage, encryption, oracle, and event monitoring.
+The backend includes public endpoints (`/health`, `/status`, `/.well-known/attestation`) and `/api/*` demo endpoints for KMS, app-wallet, S3 storage, file proxy filesystem access, encryption, oracle, and event monitoring.
 
 ## 2. Features Included
 - **Attestation + Identity**: Fetch Nitro attestation and TEE wallet identity.
@@ -16,6 +16,7 @@ The backend includes public endpoints (`/health`, `/status`, `/.well-known/attes
 - **KMS + KV APIs**: `/api/kms/derive`, `/api/kms/kv/get|put|delete`.
 - **App Wallet APIs**: `/api/app-wallet/address|sign|sign-tx`.
 - **S3 Storage APIs**: `/api/storage*` plus `/api/storage/config`.
+- **File Proxy APIs**: `/api/filesystem/config|write|read|list`.
 - **Frontend Test Panel**: One-page UI to exercise all demo APIs.
 
 ## 3. Deploy on Nova Platform (Current Flow)
@@ -23,7 +24,7 @@ The backend includes public endpoints (`/health`, `/status`, `/.well-known/attes
 ### 3.1 Create App
 1. Open **Apps** in Nova portal and click **Create App**.
 2. Fill basic fields (`name`, `repo_url`, optional `description`, `metadata_uri`, `app_contract_addr`).
-3. Configure advanced options in the form (for example app listening port, KMS/App Wallet/S3/Helios toggles, chain selection).
+3. Configure advanced options in the form (for example app listening port, KMS/App Wallet/S3/File Proxy/Helios toggles, chain selection).
 4. Submit. The platform creates an app and assigns `sqid`.
 
 ### 3.2 Create Version (Build)
@@ -170,7 +171,25 @@ This section is intended for developers who want to **learn and reuse** each mod
   - Backend handlers: [`enclave/routes.py`](./enclave/routes.py) (`/api/storage*` and `/api/storage/config`)
   - Runtime config: [`enclaver.yaml`](./enclaver.yaml) (`storage.s3.*`, `storage.s3.encryption.mode`)
 
-### 6.5 KMS Demo
+### 6.5 File Proxy Filesystem
+- **What it demonstrates**
+  - Mounting a host-backed loopback image into the enclave
+  - Reading and writing regular files with normal filesystem APIs
+  - Inspecting mount status and available capacity
+- **App APIs used**
+  - `GET /api/filesystem/config`
+  - `POST /api/filesystem/write`
+  - `GET /api/filesystem/read`
+  - `GET /api/filesystem/list`
+- **Enclaver/sidecar APIs involved**
+  - Hostfs mount defined under `storage.mounts[]`
+  - Runtime binding via `enclaver run --mount <name>=<host_state_dir>`
+- **Implementation entry points**
+  - Frontend: [`frontend/src/app/page.tsx`](./frontend/src/app/page.tsx) (`filesystem` tab)
+  - Backend handlers: [`enclave/routes.py`](./enclave/routes.py) (`/api/filesystem/*`)
+  - Runtime config: [`enclaver.yaml`](./enclaver.yaml) (`storage.mounts`)
+
+### 6.6 KMS Demo
 - **What it demonstrates**
   - Deterministic key derivation
   - KMS-backed key/value operations (put/get/delete + TTL)
@@ -189,7 +208,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - Backend handlers: [`enclave/routes.py`](./enclave/routes.py) (`/api/kms/*`)
   - Canonical SDK: [`enclave/nova_python_sdk/kms_client.py`](./enclave/nova_python_sdk/kms_client.py)
 
-### 6.6 App Wallet Sign
+### 6.7 App Wallet Sign
 - **What it demonstrates**
   - Querying app-specific wallet address
   - EIP-191 message signing via app wallet
@@ -206,7 +225,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - Backend handlers: [`enclave/routes.py`](./enclave/routes.py) (`/api/app-wallet/*`)
   - Wallet SDK: [`enclave/nova_python_sdk/kms_client.py`](./enclave/nova_python_sdk/kms_client.py)
 
-### 6.7 Oracle Demo (Internet → Chain)
+### 6.8 Oracle Demo (Internet → Chain)
 - **What it demonstrates**
   - Fetching external market data in enclave
   - Building/signing/submitting chain updates

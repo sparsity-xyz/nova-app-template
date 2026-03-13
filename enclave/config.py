@@ -87,6 +87,14 @@ S3_ENCRYPTION_KEY_VERSION: str = "v1"
 S3_ENCRYPTION_ACCEPT_PLAINTEXT: bool = True
 
 
+# Host-backed filesystem demo configuration.
+# This path is provisioned by Enclaver hostfs when the app enables file proxy.
+FILE_PROXY_ENABLED: bool = True
+FILE_PROXY_MOUNT_NAME: str = "appdata"
+FILE_PROXY_MOUNT_PATH: str = "/mnt/appdata"
+FILE_PROXY_SAMPLE_FILE: str = "notes/demo.txt"
+
+
 
 
 

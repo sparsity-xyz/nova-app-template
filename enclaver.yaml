@@ -56,6 +56,11 @@ storage:
       aad_mode: "key"
       key_version: "v1"
       accept_plaintext: true
+  mounts:
+    - name: "appdata"
+      mount_path: "/mnt/appdata"
+      required: true
+      size_mb: 10240
 
 # Helios trustless multi-chain RPC
 # - 18545 is reserved for auth-chain registry discovery when KMS registry mode is enabled.
