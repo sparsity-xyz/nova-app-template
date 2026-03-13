@@ -2,6 +2,9 @@
     "name": "nova-app-template-frontend",
     "version": "1.0.0",
     "private": true,
+    "engines": {
+        "node": ">=20.19.0"
+    },
     "scripts": {
         "dev": "next dev",
         "build": "next build",

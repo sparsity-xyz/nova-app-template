@@ -1,8 +1,9 @@
 # Stage 1: Build the frontend
-FROM node:18-slim AS frontend-build
+# Next.js 16 and @noble/hashes require Node >= 20.19.0.
+FROM node:22-slim AS frontend-build
 WORKDIR /frontend
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
