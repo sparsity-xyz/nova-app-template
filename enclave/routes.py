@@ -181,13 +181,13 @@ def _file_proxy_status() -> Dict[str, Any]:
 def _require_file_proxy_root() -> Path:
     status = _file_proxy_status()
     if not status["enabled"]:
-        raise HTTPException(status_code=503, detail="File proxy demo is disabled in config.py")
+        raise HTTPException(status_code=503, detail="Mounted directory demo is disabled in config.py")
     if not status["available"]:
         raise HTTPException(
             status_code=503,
             detail=(
-                f"File proxy mount {FILE_PROXY_MOUNT_PATH} is not available. "
-                "Enable file proxy during app creation and redeploy."
+                f"Mounted directory {FILE_PROXY_MOUNT_PATH} is not available. "
+                "Enable the mount during app creation and redeploy."
             ),
         )
     return _file_proxy_root_path()
@@ -212,6 +212,66 @@ def _resolve_file_proxy_path(path_value: Optional[str], *, allow_root: bool = Fa
     if relative_path == Path("."):
         return root
     return root / relative_path
+
+
+def _sorted_file_proxy_children(path: Path) -> list[Path]:
+    return sorted(path.iterdir(), key=lambda item: (item.is_file(), item.name.lower()))
+
+
+def _build_file_proxy_tree(path: Path, display_path: str) -> Dict[str, Any]:
+    root = _require_file_proxy_root()
+    root_label = "." if display_path in {"", "."} else display_path
+    lines = [root_label]
+
+    def _walk(current: Path, prefix: str = "") -> Tuple[list[Dict[str, Any]], int, int]:
+        items = _sorted_file_proxy_children(current)
+        nodes: list[Dict[str, Any]] = []
+        directory_count = 0
+        file_count = 0
+
+        for index, item in enumerate(items):
+            is_last = index == len(items) - 1
+            is_directory = item.is_dir()
+            connector = "`-- " if is_last else "|-- "
+            child_prefix = prefix + ("    " if is_last else "|   ")
+            display_name = f"{item.name}/" if is_directory else item.name
+            lines.append(f"{prefix}{connector}{display_name}")
+
+            if is_directory:
+                directory_count += 1
+            else:
+                file_count += 1
+
+            node: Dict[str, Any] = {
+                "name": item.name,
+                "path": item.relative_to(root).as_posix(),
+                "type": "directory" if is_directory else "file",
+                "size_bytes": item.stat().st_size,
+            }
+
+            if is_directory:
+                children, child_directories, child_files = _walk(item, child_prefix)
+                node["children"] = children
+                directory_count += child_directories
+                file_count += child_files
+
+            nodes.append(node)
+
+        return nodes, directory_count, file_count
+
+    entries, directory_count, file_count = _walk(path)
+    lines.append("")
+    lines.append(
+        f"{directory_count} {'directory' if directory_count == 1 else 'directories'}, "
+        f"{file_count} {'file' if file_count == 1 else 'files'}"
+    )
+
+    return {
+        "entries": entries,
+        "tree": "\n".join(lines),
+        "directory_count": directory_count,
+        "file_count": file_count,
+    }
 
 
 # KMS KV value codec:
@@ -635,7 +695,7 @@ def get_storage_config():
 @router.get("/filesystem/config")
 def get_filesystem_config():
     """
-    Surface host-backed filesystem mount status for the file proxy demo.
+    Surface host-backed filesystem mount status for the mounted directory demo.
     """
     return _file_proxy_status()
 
@@ -694,21 +754,16 @@ def list_filesystem_entries(path: str = "."):
     if not target.is_dir():
         raise HTTPException(status_code=400, detail=f"Path is not a directory: {path}")
 
-    entries = []
-    for entry in sorted(target.iterdir(), key=lambda item: item.name):
-        entries.append(
-            {
-                "name": entry.name,
-                "path": entry.relative_to(_require_file_proxy_root()).as_posix(),
-                "type": "directory" if entry.is_dir() else "file",
-                "size_bytes": entry.stat().st_size,
-            }
-        )
+    normalized_path = "." if path in {"", "."} else path
+    tree_payload = _build_file_proxy_tree(target, normalized_path)
 
     return {
-        "path": "." if path in {"", "."} else path,
-        "entries": entries,
-        "count": len(entries),
+        "path": normalized_path,
+        "entries": tree_payload["entries"],
+        "count": len(tree_payload["entries"]),
+        "directory_count": tree_payload["directory_count"],
+        "file_count": tree_payload["file_count"],
+        "tree": tree_payload["tree"],
     }
 
 
@@ -718,7 +773,7 @@ def get_enclaver_feature_snapshot():
     Snapshot for the core enclaver capabilities used by this template:
     1) multi-chain auth/business routing
     2) S3 encryption configuration
-    3) file proxy mount availability
+    3) mounted directory availability
     4) app-wallet availability
     5) KMS derive + KV endpoint availability
     

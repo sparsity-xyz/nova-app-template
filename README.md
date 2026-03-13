@@ -7,7 +7,7 @@ This repository is a Nova app example with:
 - Example contracts in [`contracts/`](./contracts)
 - Repo `enclaver.yaml` template (portal can parse listening port and file-proxy mount config from it)
 
-The backend includes public endpoints (`/health`, `/status`, `/.well-known/attestation`) and `/api/*` demo endpoints for KMS, app-wallet, S3 storage, file proxy filesystem access, encryption, oracle, and event monitoring.
+The backend includes public endpoints (`/health`, `/status`, `/.well-known/attestation`) and `/api/*` demo endpoints for KMS, app-wallet, S3 storage, mounted directory access, encryption, oracle, and event monitoring.
 
 ## 2. Features Included
 - **Attestation + Identity**: Fetch Nitro attestation and TEE wallet identity.
@@ -16,7 +16,7 @@ The backend includes public endpoints (`/health`, `/status`, `/.well-known/attes
 - **KMS + KV APIs**: `/api/kms/derive`, `/api/kms/kv/get|put|delete`.
 - **App Wallet APIs**: `/api/app-wallet/address|sign|sign-tx`.
 - **S3 Storage APIs**: `/api/storage*` plus `/api/storage/config`.
-- **File Proxy APIs**: `/api/filesystem/config|write|read|list`.
+- **Mounted Directory APIs**: `/api/filesystem/config|write|read|list`.
 - **Frontend Test Panel**: One-page UI to exercise all demo APIs.
 
 ## 3. Deploy on Nova Platform (Current Flow)
@@ -24,7 +24,7 @@ The backend includes public endpoints (`/health`, `/status`, `/.well-known/attes
 ### 3.1 Create App
 1. Open **Apps** in Nova portal and click **Create App**.
 2. Fill basic fields (`name`, `repo_url`, optional `description`, `metadata_uri`, `app_contract_addr`).
-3. Configure advanced options in the form (for example app listening port, KMS/App Wallet/S3/File Proxy/Helios toggles, chain selection).
+3. Configure advanced options in the form (for example app listening port, KMS/App Wallet/S3/Mounted Directory/Helios toggles, chain selection).
 4. Submit. The platform creates an app and assigns `sqid`.
 
 ### 3.2 Create Version (Build)
@@ -171,7 +171,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - Backend handlers: [`enclave/routes.py`](./enclave/routes.py) (`/api/storage*` and `/api/storage/config`)
   - Runtime config: [`enclaver.yaml`](./enclaver.yaml) (`storage.s3.*`, `storage.s3.encryption.mode`)
 
-### 6.5 File Proxy Filesystem
+### 6.5 Mounted Directory
 - **What it demonstrates**
   - Mounting a host-backed loopback image into the enclave
   - Reading and writing regular files with normal filesystem APIs

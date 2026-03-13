@@ -82,7 +82,7 @@ export default function Home() {
     const [storageConfigLoading, setStorageConfigLoading] = useState(false);
     const [storageConfigError, setStorageConfigError] = useState<string | null>(null);
     const [filesystemPath, setFilesystemPath] = useState('notes/demo.txt');
-    const [filesystemContent, setFilesystemContent] = useState('Hello from Nova file proxy');
+    const [filesystemContent, setFilesystemContent] = useState('Hello from Nova mounted directory');
     const [filesystemConfig, setFilesystemConfig] = useState<{
         enabled: boolean;
         mount_name: string;
@@ -453,7 +453,7 @@ export default function Home() {
         { id: 'hardware-entropy', label: 'Hardware Entropy', icon: '🎲' },
         { id: 'secure-echo', label: 'Secure Echo', icon: '🔒' },
         { id: 'storage', label: 'S3 Storage', icon: '📦' },
-        { id: 'filesystem', label: 'File Proxy', icon: '🗂️' },
+        { id: 'filesystem', label: 'Mounted Directory', icon: '🗂️' },
         { id: 'kms-demo', label: 'KMS Demo', icon: '🗄️' },
         { id: 'app-wallet', label: 'App Wallet Sign', icon: '🗝️' },
         { id: 'oracle', label: 'Oracle Demo', icon: '🌐' },
@@ -485,7 +485,7 @@ return (
                         <div className="flex flex-wrap gap-2 mt-4 text-xs text-slate-500">
                             <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">TLS</span>
                             <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">S3 Storage</span>
-                            <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">File Proxy</span>
+                            <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">Mounted Directory</span>
                             <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">KMS</span>
                             <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">App Wallet</span>
                             <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">Hardware Entropy</span>
@@ -989,11 +989,11 @@ return (
             )}
             {activeTab === 'filesystem' && (
                 <div className="space-y-6">
-                    <h2 className="text-xl font-semibold mb-4">Host-Backed Filesystem</h2>
+                    <h2 className="text-xl font-semibold mb-4">Mounted Directory</h2>
                     <ApiInfoBox
                         title="Enclaver Hostfs APIs"
                         apis={['GET /api/filesystem/config', 'POST /api/filesystem/write', 'GET /api/filesystem/read', 'GET /api/filesystem/list']}
-                        description="Demonstrates Enclaver file proxy: a host-backed loopback image is mounted into the enclave so the app can use normal file APIs."
+                        description="Demonstrates an Enclaver mounted directory: a host-backed loopback image is mounted into the enclave so the app can use normal file APIs."
                     />
 
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -1001,7 +1001,7 @@ return (
                             <div className="space-y-1">
                                 <p className="text-[10px] uppercase tracking-widest text-slate-500">Mount Status</p>
                                 {filesystemConfigLoading ? (
-                                    <p className="text-xs text-slate-500">Checking file proxy mount...</p>
+                                    <p className="text-xs text-slate-500">Checking mounted directory...</p>
                                 ) : filesystemConfig ? (
                                     <div className="space-y-1">
                                         <div className="flex items-center gap-2">
@@ -1076,7 +1076,7 @@ return (
                         onClick={() => callApi('/api/filesystem/list?path=.', 'GET', undefined, false, 'filesystem')}
                         className="text-sm text-slate-500 hover:text-slate-700"
                     >
-                        List mounted directory...
+                        List mounted directory.
                     </button>
                 </div>
             )}

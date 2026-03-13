@@ -34,6 +34,7 @@ export const ResponseDisplay: FC<ResponseDisplayProps> = ({ response, loading, s
     if (!response) return null;
 
     const { success, data, error, type } = response;
+    const treeOutput = typeof data?.tree === 'string' ? data.tree : null;
 
     return (
         <div className={`mt-6 rounded-xl border ${success ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'} p-4`}>
@@ -54,6 +55,15 @@ export const ResponseDisplay: FC<ResponseDisplayProps> = ({ response, loading, s
 
             {data && (
                 <div className="space-y-4">
+                    {treeOutput && (
+                        <div className="bg-white border border-slate-200 rounded-xl p-3">
+                            <p className="text-slate-500 text-xs mb-2">Mounted Directory Tree</p>
+                            <pre className="text-xs font-mono whitespace-pre text-slate-700 max-h-64 overflow-auto">
+                                {treeOutput}
+                            </pre>
+                        </div>
+                    )}
+
                     {/* Anchor Transaction */}
                     {data.anchor_tx && (
                         <div className="bg-white border border-slate-200 rounded-xl p-3">
@@ -91,7 +101,7 @@ export const ResponseDisplay: FC<ResponseDisplayProps> = ({ response, loading, s
 
                     {/* Generic JSON display */}
                     <div className="bg-white border border-slate-200 rounded-xl p-3">
-                        <p className="text-slate-500 text-xs mb-2">Response Data</p>
+                        <p className="text-slate-500 text-xs mb-2">{treeOutput ? 'Raw Response' : 'Response Data'}</p>
                         <pre
                             className="text-xs font-mono whitespace-pre-wrap break-words text-slate-700 max-h-64 overflow-auto"
                             dangerouslySetInnerHTML={{ __html: syntaxHighlight(JSON.stringify(data, null, 2)) }}
