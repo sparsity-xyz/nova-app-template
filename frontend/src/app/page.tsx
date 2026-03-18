@@ -993,7 +993,7 @@ return (
                     <ApiInfoBox
                         title="Capsule Hostfs APIs"
                         apis={['GET /api/filesystem/config', 'POST /api/filesystem/write', 'GET /api/filesystem/read', 'GET /api/filesystem/list']}
-                        description="Demonstrates an Capsule mounted directory: a host-backed loopback image is mounted into the enclave so the app can use normal file APIs."
+                        description="Demonstrates a Capsule mounted directory: a host-backed loopback image is mounted into the enclave so the app can use normal file APIs."
                     />
 
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -1088,7 +1088,7 @@ return (
             <ApiInfoBox
                 title="Capsule Sidecar APIs"
                 apis={['POST /v1/kms/derive', 'POST /v1/kms/kv/put', 'POST /v1/kms/kv/get', 'POST /v1/kms/kv/delete']}
-                description="Demonstrates the Nova KMS (Key Management Service) integrated as an Capsule sidecar. Provides deterministic key derivation for application secrets and a Key-Value store for persistent, app-scoped secret management with optional TTL expiration."
+                description="Demonstrates the Nova KMS (Key Management Service) integrated as a Capsule sidecar. Provides deterministic key derivation for application secrets and a Key-Value store for persistent, app-scoped secret management with optional TTL expiration."
             />
 
             {/* Derive Key Section */}

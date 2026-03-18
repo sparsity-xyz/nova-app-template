@@ -97,6 +97,8 @@ type CurveType = 'P-384' | 'secp256k1';
 // DER SPKI OIDs
 const OID_SEC_P384 = '2b81040022';
 const OID_SECP256K1 = '2b8104000a';
+const CAPSULE_HKDF_INFO_LABEL = 'capsule-ecdh-aes256gcm-v1';
+const LEGACY_ENCLAVER_HKDF_INFO_LABEL = 'enclaver-ecdh-aes256gcm-v1';
 
 function detectCurve(keyHex: string): CurveType {
     if (keyHex.includes(OID_SEC_P384)) return 'P-384';
@@ -476,7 +478,11 @@ export class EnclaveClient {
     /**
      * Derive shared AES-256 key from ECDH.
      */
-    private async deriveSharedKey(peerPublicKeyDer: string, nonceBytes: Uint8Array): Promise<CryptoKey> {
+    private async deriveSharedKey(
+        peerPublicKeyDer: string,
+        nonceBytes: Uint8Array,
+        hkdfInfoLabel = CAPSULE_HKDF_INFO_LABEL
+    ): Promise<CryptoKey> {
         if (nonceBytes.length !== 12) {
             throw new Error(`Invalid nonce length: expected 12 bytes, got ${nonceBytes.length}`);
         }
@@ -521,7 +527,7 @@ export class EnclaveClient {
                 name: 'HKDF',
                 hash: 'SHA-256',
                 salt,
-                info: new TextEncoder().encode('capsule-ecdh-aes256gcm-v1')
+                info: new TextEncoder().encode(hkdfInfoLabel)
             },
             hkdfKey,
             { name: 'AES-GCM', length: 256 },
@@ -573,13 +579,33 @@ export class EnclaveClient {
         if (nonceBytes.length !== 12) {
             throw new Error(`Invalid response nonce length: ${rawNonce.length} bytes`);
         }
+        const encryptedBytes = hexToBytes(payload.encrypted_data);
         const aesKey = await this.deriveSharedKey(payload.public_key, nonceBytes);
 
-        const plaintext = await crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv: nonceBytes as any },
-            aesKey,
-            hexToBytes(payload.encrypted_data) as any
-        );
+        let plaintext: ArrayBuffer;
+        try {
+            plaintext = await crypto.subtle.decrypt(
+                { name: 'AES-GCM', iv: nonceBytes as any },
+                aesKey,
+                encryptedBytes as any
+            );
+        } catch (primaryError) {
+            // Accept the legacy HKDF info label during the Enclaver -> Capsule transition.
+            const legacyAesKey = await this.deriveSharedKey(
+                payload.public_key,
+                nonceBytes,
+                LEGACY_ENCLAVER_HKDF_INFO_LABEL
+            );
+            try {
+                plaintext = await crypto.subtle.decrypt(
+                    { name: 'AES-GCM', iv: nonceBytes as any },
+                    legacyAesKey,
+                    encryptedBytes as any
+                );
+            } catch {
+                throw primaryError;
+            }
+        }
 
         return new TextDecoder().decode(plaintext);
     }
