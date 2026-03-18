@@ -5,7 +5,7 @@ Source repository:
 https://github.com/sparsity-xyz/nova-app-template
 
 Capsule Capsule API docs:
-https://github.com/sparsity-xyz/capsule/blob/sparsity/docs/internal_api.md
+https://github.com/sparsity-xyz/nova-enclave-capsule/blob/sparsity/docs/internal_api.md
 
 This package lives under `enclave/nova_python_sdk/`, so backend modules inside
 `enclave/` can import it directly:

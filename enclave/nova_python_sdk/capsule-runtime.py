@@ -11,7 +11,7 @@ SDK version:
 0.1.0
 
 Capsule Capsule API docs:
-https://github.com/sparsity-xyz/capsule/blob/sparsity/docs/internal_api.md
+https://github.com/sparsity-xyz/nova-enclave-capsule/blob/sparsity/docs/internal_api.md
 
 Typical usage inside backend modules under `enclave/`:
 
