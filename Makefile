@@ -17,4 +17,4 @@ build-docker:
 	docker build -t nova-app-template:latest .
 
 build-enclave:
-	enclaver build
+	capsule-cli build

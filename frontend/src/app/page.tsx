@@ -20,7 +20,7 @@ interface ApiResponse {
     type?: string;
 }
 
-/** Reusable info box showing which Enclaver sidecar APIs a feature demonstrates. */
+/** Reusable info box showing which Capsule sidecar APIs a feature demonstrates. */
 function ApiInfoBox({ title, apis, description, docLink }: {
     title: string;
     apis: string[];
@@ -480,7 +480,7 @@ return (
                             🛡️ Nova App Template
                         </h1>
                         <p className="text-slate-500 mt-2">
-                            Best-practice demos for Nova App development and Enclaver sidecar APIs.
+                            Best-practice demos for Nova App development and Capsule sidecar APIs.
                         </p>
                         <div className="flex flex-wrap gap-2 mt-4 text-xs text-slate-500">
                             <span className="px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700">TLS</span>
@@ -762,11 +762,11 @@ return (
                 <div className="space-y-6">
                     <h2 className="text-xl font-semibold mb-4">Secure Echo</h2>
                     <ApiInfoBox
-                        title="Enclaver Sidecar APIs"
+                        title="Capsule Sidecar APIs"
                         apis={['POST /v1/encryption/encrypt', 'POST /v1/encryption/decrypt', 'GET /v1/encryption/public_key']}
                         description="Demonstrates end-to-end encrypted communication with the enclave using ECDH key exchange (P-384 / secp256k1) and AES-256-GCM encryption. Even if the TLS tunnel is compromised, data remains private."
                         docLink={{
-                            url: 'https://github.com/sparsity-xyz/enclaver/blob/sparsity/docs/encryption.md',
+                            url: 'https://github.com/sparsity-xyz/nova-enclave-capsule/blob/main/docs/encryption.md',
                             label: 'E2E Encryption Documentation'
                         }}
                     />
@@ -860,7 +860,7 @@ return (
                 <div className="space-y-6">
                     <h2 className="text-xl font-semibold mb-4">Hardware Entropy</h2>
                     <ApiInfoBox
-                        title="Enclaver Sidecar API"
+                        title="Capsule Sidecar API"
                         apis={['GET /v1/random']}
                         description="Generates cryptographically secure random bytes using the AWS Nitro Secure Module (NSM) hardware random number generator. Unlike software-based PRNGs, NSM provides true hardware entropy sourced from the Nitro Hypervisor, making it suitable for key generation, nonces, and other security-critical operations."
                     />
@@ -910,9 +910,9 @@ return (
                 <div className="space-y-6">
                     <h2 className="text-xl font-semibold mb-4">S3 Persistent Storage</h2>
                     <ApiInfoBox
-                        title="Enclaver Sidecar APIs"
+                        title="Capsule Sidecar APIs"
                         apis={['POST /v1/s3/put', 'POST /v1/s3/get', 'POST /v1/s3/list', 'POST /v1/s3/delete', 'GET /api/storage/config']}
-                        description="Store and retrieve application data in S3 via the Enclaver sidecar. Encryption is transparent and uses the same /v1/s3/* endpoints; actual mode is controlled by Enclaver config."
+                        description="Store and retrieve application data in S3 via the Capsule sidecar. Encryption is transparent and uses the same /v1/s3/* endpoints; actual mode is controlled by Capsule config."
                     />
 
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -991,9 +991,9 @@ return (
                 <div className="space-y-6">
                     <h2 className="text-xl font-semibold mb-4">Mounted Directory</h2>
                     <ApiInfoBox
-                        title="Enclaver Hostfs APIs"
+                        title="Capsule Hostfs APIs"
                         apis={['GET /api/filesystem/config', 'POST /api/filesystem/write', 'GET /api/filesystem/read', 'GET /api/filesystem/list']}
-                        description="Demonstrates an Enclaver mounted directory: a host-backed loopback image is mounted into the enclave so the app can use normal file APIs."
+                        description="Demonstrates a Capsule mounted directory: a host-backed loopback image is mounted into the enclave so the app can use normal file APIs."
                     />
 
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -1086,9 +1086,9 @@ return (
         <div className="space-y-6">
             <h2 className="text-xl font-semibold mb-4">KMS Demo</h2>
             <ApiInfoBox
-                title="Enclaver Sidecar APIs"
+                title="Capsule Sidecar APIs"
                 apis={['POST /v1/kms/derive', 'POST /v1/kms/kv/put', 'POST /v1/kms/kv/get', 'POST /v1/kms/kv/delete']}
-                description="Demonstrates the Nova KMS (Key Management Service) integrated as an Enclaver sidecar. Provides deterministic key derivation for application secrets and a Key-Value store for persistent, app-scoped secret management with optional TTL expiration."
+                description="Demonstrates the Nova KMS (Key Management Service) integrated as a Capsule sidecar. Provides deterministic key derivation for application secrets and a Key-Value store for persistent, app-scoped secret management with optional TTL expiration."
             />
 
             {/* Derive Key Section */}
@@ -1207,7 +1207,7 @@ return (
         <div className="space-y-6">
             <h2 className="text-xl font-semibold mb-4">App Wallet Sign</h2>
             <ApiInfoBox
-                title="Enclaver Sidecar APIs"
+                title="Capsule Sidecar APIs"
                 apis={['GET /v1/app-wallet/address', 'POST /v1/app-wallet/sign']}
                 description="The App Wallet is a separate Ethereum wallet provisioned per-application by the Nova KMS. It can sign messages (EIP-191) and transactions independently of the TEE wallet, enabling flexible authorization patterns."
             />

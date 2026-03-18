@@ -11,7 +11,7 @@ import {ISparsityApp} from "./ISparsityApp.sol";
  * App-specific logic (e.g., state hashing) lives in derived contracts.
  */
 contract NovaAppBase is ISparsityApp {
-    /// @notice The TEE wallet address (from Odyn /v1/eth/address)
+    /// @notice The TEE wallet address (from Capsule-Runtime /v1/eth/address)
     address public teeWalletAddress;
 
     /// @notice Optional app-level wallet for stable cross-instance identity.
@@ -113,7 +113,7 @@ contract NovaAppBase is ISparsityApp {
 
     /**
      * @notice Register the TEE wallet address
-     * @param teeWalletAddress_ The Ethereum address from the TEE's Odyn API
+     * @param teeWalletAddress_ The Ethereum address from the TEE's Capsule-Runtime API
      * @dev Can only be called once by the Nova Registry
      */
     function registerTEEWallet(

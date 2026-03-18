@@ -25,9 +25,9 @@ Architecture:
                          │  (Framework) │
                          └──────────────┘
 
-`app.py` owns the shared `Odyn()` instance from `enclave/nova_python_sdk/`
+`app.py` owns the shared `CapsuleRuntime()` instance from `enclave/nova_python_sdk/`
 and passes it into `routes.init()` and `tasks.init()`. Keep reusable Nova /
-Enclaver API wrappers in `nova_python_sdk/`, and keep app-specific route, task,
+Capsule API wrappers in `nova_python_sdk/`, and keep app-specific route, task,
 and contract logic in `routes.py`, `tasks.py`, and `chain.py`.
 """
 
@@ -48,7 +48,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # Platform & User Components
-from nova_python_sdk.odyn import Odyn
+from nova_python_sdk.capsule_runtime import CapsuleRuntime
 import tasks
 import routes
 import config
@@ -80,18 +80,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Helios sync wait skipped/failed: {e}")
 
-    tasks.init(app_state, odyn)
-    routes.init(app_state, odyn)
+    tasks.init(app_state, capsule_runtime)
+    routes.init(app_state, capsule_runtime)
     
     # 2. Register user routes (prefix: /api) and public routes
     app.include_router(routes.public_router)
     app.include_router(routes.router)
     
-    # 3. Load persisted state from S3 via Odyn.
+    # 3. Load persisted state from S3 via CapsuleRuntime.
     # In local mockup mode this can be unavailable; if so we log and continue
     # with an empty state so local development still comes up cleanly.
     try:
-        data_bytes = odyn.s3_get("app_state.json")
+        data_bytes = capsule_runtime.s3_get("app_state.json")
         if data_bytes:
             app_state["data"] = json.loads(data_bytes.decode('utf-8'))
             logger.info("State loaded from S3")
@@ -160,13 +160,13 @@ else:
 # =============================================================================
 # Shared State & Platform SDK
 # =============================================================================
-# Odyn: interface to enclave runtime services.
+# CapsuleRuntime: interface to enclave runtime services.
 # Endpoint resolution order:
 #   1. explicit constructor argument
-#   2. ODYN_API_BASE_URL / ODYN_ENDPOINT
+#   2. CAPSULE_RUNTIME_API_BASE_URL / CAPSULE_RUNTIME_ENDPOINT
 #   3. 127.0.0.1:18000 when IN_ENCLAVE=true
-#   4. odyn.sparsity.cloud:18000 in local development
-odyn = Odyn()
+#   4. capsule-runtime.sparsity.cloud:18000 in local development
+capsule_runtime = CapsuleRuntime()
 
 # Application state: Shared across routes.py and tasks.py
 # - "data": Your application's persistent data (saved to S3)
@@ -222,7 +222,7 @@ def root_overview(request: Request):
             {"endpoint": "GET /api/filesystem/list", "description": "List files in the mounted filesystem"},
             {"endpoint": "GET /api/app-wallet/address", "description": "Get app wallet address"},
             {"endpoint": "POST /api/app-wallet/sign", "description": "Sign message with app wallet"},
-            {"endpoint": "GET /api/enclaver/features", "description": "Enclaver capability snapshot"},
+            {"endpoint": "GET /api/capsule/features", "description": "Capsule capability snapshot"},
         ],
     }
 
@@ -230,7 +230,7 @@ def root_overview(request: Request):
 def get_status():
     """Get TEE identity and cron status."""
     try:
-        address = Web3.to_checksum_address(odyn.eth_address())
+        address = Web3.to_checksum_address(capsule_runtime.eth_address())
         return AppStatus(
             status="running",
             ETH_address=address,
@@ -269,5 +269,5 @@ scheduler.add_job(tasks.oracle_periodic_update, 'interval', minutes=tasks.ORACLE
 if __name__ == "__main__":
     # This port must match the "App Listening Port" value entered when 
     # creating the app on the Nova platform.
-    # The portal can parse ingress.listen_port from repo enclaver.yaml when creating an app.
+    # The portal can parse ingress.listen_port from repo capsule.yaml when creating an app.
     uvicorn.run(app, host="0.0.0.0", port=8000)

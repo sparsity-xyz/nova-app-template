@@ -19,7 +19,7 @@ This tutorial only covers deploying through the Nova platform.
 4. Submit and keep the returned app `sqid`.
 
 Implementation notes:
-- The portal can parse `enclaver.yaml` from your repo to prefill app listening port.
+- The portal can parse `capsule.yaml` from your repo to prefill app listening port.
 - App settings are persisted in control-plane `advanced_json`.
 
 ## 3. Create Version (Build)
@@ -32,7 +32,7 @@ Implementation notes:
 
 Implementation notes:
 - Build input is `git_ref + version`; repository is already bound to the app.
-- Control-plane generates app-hub `nova-build.yaml` and `enclaver.yaml` from app settings, then triggers workflow.
+- Control-plane generates app-hub `nova-build.yaml` and `capsule.yaml` from app settings, then triggers workflow.
 
 ## 4. Deploy Version
 

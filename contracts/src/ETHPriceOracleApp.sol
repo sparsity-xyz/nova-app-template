@@ -75,7 +75,7 @@ contract ETHPriceOracleApp is NovaAppBase {
 
     /**
      * @notice Update the state hash (called by TEE after state save)
-     * @param _newHash The keccak256 hash returned by Odyn's /v1/state/save
+     * @param _newHash The keccak256 hash returned by Capsule-Runtime's /v1/state/save
      */
     function updateStateHash(bytes32 _newHash) external onlyTEEOrAppWallet {
         require(_newHash != bytes32(0), "ETHPriceOracleApp: invalid hash");

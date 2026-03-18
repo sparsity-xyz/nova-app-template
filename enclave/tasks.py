@@ -6,7 +6,7 @@ Background Tasks (tasks.py)
 Define your periodic background jobs here.
 
 This module should keep task scheduling and app-specific background logic.
-Reuse the shared `Odyn` instance passed from `app.py` for platform services,
+Reuse the shared `CapsuleRuntime` instance passed from `app.py` for platform services,
 and keep reusable RPC transport logic in `nova_python_sdk.rpc` via
 `chain.py`.
 
@@ -17,7 +17,7 @@ and keep reusable RPC transport logic in `nova_python_sdk.rpc` via
 
 How it works:
     - background_task() is called every 5 minutes by the scheduler
-    - You can access app_state and odyn after init() is called
+    - You can access app_state and capsule_runtime after init() is called
     - Scheduler intervals are configured in app.py
     - Keep business-chain contract helpers in chain.py instead of duplicating RPC wiring here
 
@@ -47,7 +47,7 @@ from config import (
 )
 
 if TYPE_CHECKING:
-    from nova_python_sdk.odyn import Odyn
+    from nova_python_sdk.capsule_runtime import CapsuleRuntime
 
 logger = logging.getLogger("nova-app.tasks")
 
@@ -55,7 +55,7 @@ logger = logging.getLogger("nova-app.tasks")
 # Shared References (set by app.py during startup)
 # =============================================================================
 app_state: Optional[dict] = None
-odyn: Optional["Odyn"] = None
+capsule_runtime: Optional["CapsuleRuntime"] = None
 
 # =============================================================================
 # Configuration
@@ -63,7 +63,7 @@ odyn: Optional["Odyn"] = None
 # See config.py for all configuration and defaults.
 
 
-def init(state_ref: dict, odyn_ref: "Odyn"):
+def init(state_ref: dict, capsule_runtime_ref: "CapsuleRuntime"):
     """
     Initialize the tasks module with shared references.
 
@@ -71,11 +71,11 @@ def init(state_ref: dict, odyn_ref: "Odyn"):
 
     Args:
         state_ref: Shared mutable app state dict.
-        odyn_ref: Shared Odyn client already configured for current runtime.
+        capsule_runtime_ref: Shared CapsuleRuntime client already configured for current runtime.
     """
-    global app_state, odyn
+    global app_state, capsule_runtime
     app_state = state_ref
-    odyn = odyn_ref
+    capsule_runtime = capsule_runtime_ref
     logger.info("Tasks module initialized")
 
 
@@ -120,36 +120,36 @@ def fetch_eth_price_usd() -> int:
 
 
 def _resolve_tx_signer() -> Tuple[str, str, Callable[[Dict[str, Any]], Dict[str, Any]]]:
-    if not odyn:
-        raise RuntimeError("Odyn not initialized")
+    if not capsule_runtime:
+        raise RuntimeError("CapsuleRuntime not initialized")
 
-    tee_wallet_address = odyn.eth_address()
+    tee_wallet_address = capsule_runtime.eth_address()
     try:
-        app_wallet = odyn.app_wallet_address()
+        app_wallet = capsule_runtime.app_wallet_address()
         app_wallet_address = app_wallet.get("address")
         if app_wallet_address:
             def _app_wallet_signer(tx: Dict[str, Any]) -> Dict[str, Any]:
-                return odyn.app_wallet_sign_tx(tx)
+                return capsule_runtime.app_wallet_sign_tx(tx)
             return "app_wallet", app_wallet_address, _app_wallet_signer
     except Exception as exc:
         logger.warning(f"App-wallet signer unavailable, falling back to TEE signer: {exc}")
 
     def _tee_signer(tx: Dict[str, Any]) -> Dict[str, Any]:
-        return odyn.sign_tx(tx)
+        return capsule_runtime.sign_tx(tx)
 
     return "tee_wallet", tee_wallet_address, _tee_signer
 
 
 def update_eth_price_on_chain(*, request_id: int, reason: str) -> Dict[str, Any]:
-    if not (odyn and CONTRACT_ADDRESS):
-        raise RuntimeError("Oracle not configured (missing odyn or CONTRACT_ADDRESS)")
+    if not (capsule_runtime and CONTRACT_ADDRESS):
+        raise RuntimeError("Oracle not configured (missing capsule_runtime or CONTRACT_ADDRESS)")
 
     signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
     price_usd = fetch_eth_price_usd()
     updated_at = int(datetime.now(tz=timezone.utc).timestamp())
 
     signed = sign_update_ETH_price(
-        odyn=odyn,
+        capsule_runtime=capsule_runtime,
         contract_address=CONTRACT_ADDRESS,
         chain_id=BUSINESS_CHAIN_ID,
         request_id=request_id,
@@ -190,13 +190,13 @@ def update_state_hash_on_chain(state_hash: str) -> Optional[str]:
     Returns:
         Raw signed transaction (ready for broadcast), or None on failure
     """
-    if not odyn or not CONTRACT_ADDRESS:
+    if not capsule_runtime or not CONTRACT_ADDRESS:
         return None
     
     try:
         signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
         signed = sign_update_state_hash(
-            odyn=odyn,
+            capsule_runtime=capsule_runtime,
             contract_address=CONTRACT_ADDRESS,
             chain_id=BUSINESS_CHAIN_ID,
             state_hash=state_hash,
@@ -249,10 +249,10 @@ def background_task():
     
     # --- Example 2: Save state to S3 ---
     try:
-        if app_state.get("initialized") and odyn:
+        if app_state.get("initialized") and capsule_runtime:
             state_data = app_state.get("data", {})
             json_bytes = json.dumps(state_data).encode('utf-8')
-            success = odyn.s3_put("app_state.json", json_bytes)
+            success = capsule_runtime.s3_put("app_state.json", json_bytes)
             if success:
                 logger.info("Auto-saved state to S3")
                 
@@ -286,7 +286,7 @@ def poll_contract_events():
 
     Logs are stored in app_state["data"]["event_monitor"] for frontend display.
     """
-    if not (odyn and app_state and CONTRACT_ADDRESS):
+    if not (capsule_runtime and app_state and CONTRACT_ADDRESS):
         return
 
     # Initialize monitor state early
@@ -343,7 +343,7 @@ def poll_contract_events():
         app_state["data"]["last_state_hash"] = state_hash
 
         signed = sign_update_state_hash(
-            odyn=odyn,
+            capsule_runtime=capsule_runtime,
             contract_address=CONTRACT_ADDRESS,
             chain_id=BUSINESS_CHAIN_ID,
             state_hash=state_hash,

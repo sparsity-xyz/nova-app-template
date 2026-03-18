@@ -1,5 +1,5 @@
 """
-Nova Python SDK wrapper for Odyn / Enclaver internal APIs.
+Nova Python SDK wrapper for CapsuleRuntime / Capsule APIs.
 
 Canonical source:
 https://github.com/sparsity-xyz/nova-app-template/tree/main/enclave/nova_python_sdk
@@ -10,19 +10,19 @@ Updated at:
 SDK version:
 0.1.0
 
-Enclaver Internal API docs:
-https://github.com/sparsity-xyz/enclaver/blob/sparsity/docs/internal_api.md
+Capsule API docs:
+https://github.com/sparsity-xyz/nova-enclave-capsule/blob/main/docs/capsule-api.md
 
 Typical usage inside backend modules under `enclave/`:
 
-    from nova_python_sdk.odyn import Odyn
+    from nova_python_sdk.capsule_runtime import CapsuleRuntime
 
-    odyn = Odyn()
-    tee_address = odyn.eth_address()
+    capsule_runtime = CapsuleRuntime()
+    tee_address = capsule_runtime.eth_address()
 
-`Odyn()` resolves its base URL from explicit arguments first, then
-`ODYN_API_BASE_URL` / `ODYN_ENDPOINT`, then falls back to
-`127.0.0.1:18000` in enclave mode or `odyn.sparsity.cloud:18000` in local
+`CapsuleRuntime()` resolves its base URL from explicit arguments first, then
+`CAPSULE_RUNTIME_API_BASE_URL` / `CAPSULE_RUNTIME_ENDPOINT`, then falls back to
+`127.0.0.1:18000` in enclave mode or `capsule-runtime.sparsity.cloud:18000` in local
 development.
 """
 
@@ -33,22 +33,22 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from .env import resolve_odyn_api_base_url
+from .env import resolve_capsule_runtime_api_base_url
 
 
-class Odyn:
+class CapsuleRuntime:
     """
-    Wrapper around the enclave-local Odyn API with Nova development fallbacks.
+    Wrapper around the enclave-local CapsuleRuntime API with Nova development fallbacks.
     """
 
     def __init__(self, endpoint: Optional[str] = None):
         """
-        Initialize the Odyn client.
+        Initialize the CapsuleRuntime client.
 
         Args:
             endpoint: Optional explicit base URL override.
         """
-        self.endpoint = resolve_odyn_api_base_url(endpoint)
+        self.endpoint = resolve_capsule_runtime_api_base_url(endpoint)
 
     def _call(self, method: str, path: str, payload: Any = None) -> Any:
         url = f"{self.endpoint}{path}"
@@ -63,7 +63,7 @@ class Odyn:
         Returns:
             Hex-encoded Ethereum address.
 
-        Internal API:
+        Capsule API:
             `GET /v1/eth/address`
         """
         return self._call("GET", "/v1/eth/address")["address"]
@@ -73,12 +73,12 @@ class Odyn:
         Sign an EIP-1559 transaction payload.
 
         Args:
-            tx: Either a normalized Odyn payload or a common Web3-style transaction dict.
+            tx: Either a normalized CapsuleRuntime payload or a common Web3-style transaction dict.
 
         Returns:
             Raw transaction, transaction hash, signature, and signer address.
 
-        Internal API:
+        Capsule API:
             `POST /v1/eth/sign-tx`
         """
         if "kind" not in tx:
@@ -104,9 +104,9 @@ class Odyn:
             include_attestation: Whether to attach a CBOR attestation in the response.
 
         Returns:
-            Signature response from Odyn.
+            Signature response from CapsuleRuntime.
 
-        Internal API:
+        Capsule API:
             `POST /v1/eth/sign`
         """
         return self._call(
@@ -122,7 +122,7 @@ class Odyn:
         Returns:
             NSM-backed random bytes.
 
-        Internal API:
+        Capsule API:
             `GET /v1/random`
         """
         response = self._call("GET", "/v1/random")
@@ -146,7 +146,7 @@ class Odyn:
         Returns:
             Raw CBOR bytes.
 
-        Internal API:
+        Capsule API:
             `POST /v1/attestation`
         """
         payload: Dict[str, Any] = {"nonce": nonce or ""}
@@ -171,7 +171,7 @@ class Odyn:
         Returns:
             JSON with DER and PEM encodings.
 
-        Internal API:
+        Capsule API:
             `GET /v1/encryption/public_key`
         """
         return self._call("GET", "/v1/encryption/public_key")
@@ -183,7 +183,7 @@ class Odyn:
         Returns:
             DER bytes for the enclave P-384 public key.
 
-        Internal API:
+        Capsule API:
             `GET /v1/encryption/public_key`
         """
         public_key = self.get_encryption_public_key()
@@ -203,7 +203,7 @@ class Odyn:
         Returns:
             Encrypted payload, nonce, and enclave public key.
 
-        Internal API:
+        Capsule API:
             `POST /v1/encryption/encrypt`
         """
         if not client_public_key.startswith("0x"):
@@ -226,7 +226,7 @@ class Odyn:
         Returns:
             UTF-8 plaintext.
 
-        Internal API:
+        Capsule API:
             `POST /v1/encryption/decrypt`
         """
         nonce_hex = nonce[2:] if nonce.startswith("0x") else nonce
@@ -258,7 +258,7 @@ class Odyn:
         Returns:
             `True` when the write succeeds.
 
-        Internal API:
+        Capsule API:
             `POST /v1/s3/put`
         """
         payload = {"key": key, "value": base64.b64encode(value).decode("ascii")}
@@ -278,7 +278,7 @@ class Odyn:
         Returns:
             Raw object bytes, or `None` when the object is not found.
 
-        Internal API:
+        Capsule API:
             `POST /v1/s3/get`
         """
         response = requests.post(f"{self.endpoint}/v1/s3/get", json={"key": key}, timeout=30)
@@ -297,7 +297,7 @@ class Odyn:
         Returns:
             `True` when the delete succeeds.
 
-        Internal API:
+        Capsule API:
             `POST /v1/s3/delete`
         """
         response = requests.post(f"{self.endpoint}/v1/s3/delete", json={"key": key}, timeout=30)
@@ -319,10 +319,10 @@ class Odyn:
             max_keys: Optional maximum number of keys to return.
 
         Returns:
-            Raw list response from the internal API, including any pagination
+            Raw list response from the Capsule API, including any pagination
             metadata.
 
-        Internal API:
+        Capsule API:
             `POST /v1/s3/list`
         """
         payload: Dict[str, Any] = {}
@@ -348,7 +348,7 @@ class Odyn:
         Returns:
             Raw derivation response from Nova KMS.
 
-        Internal API:
+        Capsule API:
             `POST /v1/kms/derive`
         """
         return self._call("POST", "/v1/kms/derive", {"path": path, "context": context, "length": length})
@@ -363,7 +363,7 @@ class Odyn:
         Returns:
             Raw KMS KV read response.
 
-        Internal API:
+        Capsule API:
             `POST /v1/kms/kv/get`
         """
         return self._call("POST", "/v1/kms/kv/get", {"key": key})
@@ -380,7 +380,7 @@ class Odyn:
         Returns:
             Raw KMS KV write response.
 
-        Internal API:
+        Capsule API:
             `POST /v1/kms/kv/put`
         """
         return self._call("POST", "/v1/kms/kv/put", {"key": key, "value": value, "ttl_ms": ttl_ms})
@@ -395,7 +395,7 @@ class Odyn:
         Returns:
             Raw KMS KV delete response.
 
-        Internal API:
+        Capsule API:
             `POST /v1/kms/kv/delete`
         """
         return self._call("POST", "/v1/kms/kv/delete", {"key": key})
@@ -407,7 +407,7 @@ class Odyn:
         Returns:
             Raw app-wallet identity response, including the wallet address.
 
-        Internal API:
+        Capsule API:
             `GET /v1/app-wallet/address`
         """
         return self._call("GET", "/v1/app-wallet/address")
@@ -422,7 +422,7 @@ class Odyn:
         Returns:
             Raw app-wallet signing response.
 
-        Internal API:
+        Capsule API:
             `POST /v1/app-wallet/sign`
         """
         return self._call("POST", "/v1/app-wallet/sign", {"message": message})
@@ -443,7 +443,7 @@ class Odyn:
         Returns:
             Raw app-wallet transaction signing response.
 
-        Internal API:
+        Capsule API:
             `POST /v1/app-wallet/sign-tx`
         """
         payload = dict(tx) if "payload" in tx else {"payload": tx}
