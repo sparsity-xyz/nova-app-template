@@ -7,10 +7,10 @@ Keep contract selectors, ABI-specific reads, and transaction builders here.
 Runtime endpoint precedence:
 - Business chain: `ETHEREUM_MAINNET_RPC_URL` -> `BUSINESS_CHAIN_RPC_URL` ->
   enclave-local Helios (`127.0.0.1:18546`) -> public mockup Helios
-  (`odyn.sparsity.cloud:18546`)
+  (`capsule-runtime.sparsity.cloud:18546`)
 - Auth chain: `NOVA_AUTH_CHAIN_RPC_URL` -> `AUTH_CHAIN_RPC_URL` ->
   enclave-local Helios (`127.0.0.1:18545`) -> public mockup Helios
-  (`odyn.sparsity.cloud:18545`)
+  (`capsule-runtime.sparsity.cloud:18545`)
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def auth_chain_rpc_url() -> str:
 def _rpc_source(endpoint: str) -> str:
     if in_enclave():
         return "helios-local"
-    if endpoint.startswith("http://odyn.sparsity.cloud:"):
+    if endpoint.startswith("http://capsule-runtime.sparsity.cloud:"):
         return "helios-mockup"
     return "external-rpc"
 
@@ -142,7 +142,7 @@ def get_auth_chain_status() -> Dict[str, Any]:
 
 def sign_update_ETH_price(
     *,
-    odyn: Any,
+    capsule-runtime: Any,
     contract_address: str,
     chain_id: int,
     request_id: int,
@@ -153,7 +153,7 @@ def sign_update_ETH_price(
     sender_address: Optional[str] = None,
     signer_kind: str = "tee_wallet",
 ) -> Dict[str, Any]:
-    tx_sender = Web3.to_checksum_address(sender_address or odyn.eth_address())
+    tx_sender = Web3.to_checksum_address(sender_address or capsule-runtime.eth_address())
     contract_address = Web3.to_checksum_address(contract_address)
     w3 = _chain.w3
 
@@ -177,7 +177,7 @@ def sign_update_ETH_price(
         "data": data,
     }
 
-    signed = sign_tx_fn(tx) if sign_tx_fn else odyn.sign_tx(tx)
+    signed = sign_tx_fn(tx) if sign_tx_fn else capsule-runtime.sign_tx(tx)
     signed.setdefault("address", tx_sender)
 
     return _broadcast_and_verify(
@@ -193,7 +193,7 @@ def sign_update_ETH_price(
 
 def sign_update_state_hash(
     *,
-    odyn: Any,
+    capsule-runtime: Any,
     contract_address: str,
     chain_id: int,
     state_hash: str,
@@ -203,7 +203,7 @@ def sign_update_state_hash(
     signer_kind: str = "tee_wallet",
 ) -> Dict[str, Any]:
     """Build, sign and optionally broadcast updateStateHash transaction."""
-    tx_sender = Web3.to_checksum_address(sender_address or odyn.eth_address())
+    tx_sender = Web3.to_checksum_address(sender_address or capsule-runtime.eth_address())
     contract_address = Web3.to_checksum_address(contract_address)
     w3 = _chain.w3
 
@@ -225,7 +225,7 @@ def sign_update_state_hash(
         "data": data,
     }
 
-    signed = sign_tx_fn(tx) if sign_tx_fn else odyn.sign_tx(tx)
+    signed = sign_tx_fn(tx) if sign_tx_fn else capsule-runtime.sign_tx(tx)
     signed.setdefault("address", tx_sender)
     return _broadcast_and_verify(
         w3=w3,

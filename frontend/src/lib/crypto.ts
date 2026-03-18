@@ -2,7 +2,7 @@
  * TLS Crypto Client
  * 
  * Provides ECDH + AES-GCM encrypted communication with Nova TEE enclave.
- * Supports both P-384 (Odyn standard) and secp256k1 curves.
+ * Supports both P-384 (Capsule-Runtime standard) and secp256k1 curves.
  */
 
 import * as secp256k1 from '@noble/secp256k1';
@@ -505,7 +505,7 @@ export class EnclaveClient {
             sharedSecret = fullSecret.slice(1, 33).buffer;
         }
 
-        // Enclaver HKDF salt = sorted(pub_self_raw, pub_peer_raw) || nonce
+        // Capsule HKDF salt = sorted(pub_self_raw, pub_peer_raw) || nonce
         const sorted = compareBytes(selfRaw, peerRaw) <= 0 ? [selfRaw, peerRaw] : [peerRaw, selfRaw];
         const salt = new Uint8Array(sorted[0].length + sorted[1].length + nonceBytes.length);
         salt.set(sorted[0], 0);
@@ -521,7 +521,7 @@ export class EnclaveClient {
                 name: 'HKDF',
                 hash: 'SHA-256',
                 salt,
-                info: new TextEncoder().encode('enclaver-ecdh-aes256gcm-v1')
+                info: new TextEncoder().encode('capsule-ecdh-aes256gcm-v1')
             },
             hkdfKey,
             { name: 'AES-GCM', length: 256 },

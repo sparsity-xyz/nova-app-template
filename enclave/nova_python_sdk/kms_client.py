@@ -10,14 +10,14 @@ Updated at:
 SDK version:
 0.1.0
 
-Enclaver Internal API docs:
-https://github.com/sparsity-xyz/enclaver/blob/sparsity/docs/internal_api.md
+Capsule Capsule API docs:
+https://github.com/sparsity-xyz/capsule/blob/sparsity/docs/internal_api.md
 
 Typical usage inside request handlers:
 
     from nova_python_sdk.kms_client import NovaKmsClient
 
-    client = NovaKmsClient(endpoint=odyn.endpoint)
+    client = NovaKmsClient(endpoint=capsule-runtime.endpoint)
     result = client.kv_get("example-key")
 
 Use this client when you want a thin wrapper around `/v1/kms/*` and
@@ -35,7 +35,7 @@ import requests
 
 class PlatformApiError(RuntimeError):
     """
-    Raised when the Enclaver internal API returns a non-2xx status code.
+    Raised when the Capsule internal API returns a non-2xx status code.
 
     Attributes:
         path: Request path that failed.
@@ -97,7 +97,7 @@ class NovaKmsClient:
         Returns:
             Raw derivation response from Nova KMS.
 
-        Internal API: `POST /v1/kms/derive`
+        Capsule API: `POST /v1/kms/derive`
         """
         return self._request(
             "POST",
@@ -115,7 +115,7 @@ class NovaKmsClient:
         Returns:
             Raw KMS KV read response.
 
-        Internal API: `POST /v1/kms/kv/get`
+        Capsule API: `POST /v1/kms/kv/get`
         """
         return self._request("POST", "/v1/kms/kv/get", {"key": key})
 
@@ -131,7 +131,7 @@ class NovaKmsClient:
         Returns:
             Raw KMS KV write response.
 
-        Internal API: `POST /v1/kms/kv/put`
+        Capsule API: `POST /v1/kms/kv/put`
         """
         return self._request(
             "POST",
@@ -149,7 +149,7 @@ class NovaKmsClient:
         Returns:
             Raw KMS KV delete response.
 
-        Internal API: `POST /v1/kms/kv/delete`
+        Capsule API: `POST /v1/kms/kv/delete`
         """
         return self._request("POST", "/v1/kms/kv/delete", {"key": key})
 
@@ -160,7 +160,7 @@ class NovaKmsClient:
         Returns:
             Raw app-wallet identity response, including the wallet address.
 
-        Internal API: `GET /v1/app-wallet/address`
+        Capsule API: `GET /v1/app-wallet/address`
         """
         return self._request("GET", "/v1/app-wallet/address")
 
@@ -174,7 +174,7 @@ class NovaKmsClient:
         Returns:
             Raw app-wallet signing response.
 
-        Internal API: `POST /v1/app-wallet/sign`
+        Capsule API: `POST /v1/app-wallet/sign`
         """
         return self._request("POST", "/v1/app-wallet/sign", {"message": message})
 
@@ -189,7 +189,7 @@ class NovaKmsClient:
         Returns:
             Raw app-wallet transaction signing response.
 
-        Internal API: `POST /v1/app-wallet/sign-tx`
+        Capsule API: `POST /v1/app-wallet/sign-tx`
         """
         body = dict(payload) if "payload" in payload else {"payload": payload}
         body.setdefault("include_attestation", False)

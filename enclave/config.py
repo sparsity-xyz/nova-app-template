@@ -11,7 +11,7 @@ This module defines defaults only. Runtime overrides are resolved in
 
 Relevant override env vars:
 - `IN_ENCLAVE`
-- `ODYN_API_BASE_URL` / `ODYN_ENDPOINT`
+- `CAPSULE-RUNTIME_API_BASE_URL` / `CAPSULE-RUNTIME_ENDPOINT`
 - `ETHEREUM_MAINNET_RPC_URL` / `BUSINESS_CHAIN_RPC_URL`
 - `NOVA_AUTH_CHAIN_RPC_URL` / `AUTH_CHAIN_RPC_URL`
 """
@@ -30,10 +30,10 @@ AUTH_CHAIN_PUBLIC_RPC_URL: str = "https://sepolia.base.org"
 
 # Local development should prefer the public mockup Helios endpoint so behavior
 # stays close to the final enclave runtime instead of bypassing Helios entirely.
-AUTH_CHAIN_MOCK_HELIOS_RPC_URL: str = "http://odyn.sparsity.cloud:18545"
+AUTH_CHAIN_MOCK_HELIOS_RPC_URL: str = "http://capsule-runtime.sparsity.cloud:18545"
 
 # In enclave mode (IN_ENCLAVE=true), the auth-chain Helios instance is expected
-# to be available at this local endpoint (configured in enclaver.yaml).
+# to be available at this local endpoint (configured in capsule.yaml).
 AUTH_CHAIN_ENCLAVE_HELIOS_RPC_URL: str = "http://127.0.0.1:18545"
 
 
@@ -48,14 +48,14 @@ ETHEREUM_MAINNET_CHAIN_NAME: str = "ethereum-mainnet"
 ETHEREUM_MAINNET_CHAIN_ID: int = 1
 
 # Prefer the mockup Helios endpoint during local development.
-ETHEREUM_MAINNET_MOCK_HELIOS_RPC_URL: str = "http://odyn.sparsity.cloud:18546"
+ETHEREUM_MAINNET_MOCK_HELIOS_RPC_URL: str = "http://capsule-runtime.sparsity.cloud:18546"
 
 # Public RPCs are kept as explicit operator-facing fallbacks.
 ETHEREUM_MAINNET_PUBLIC_RPC_URL: str = "https://ethereum-rpc.publicnode.com"
 ETHEREUM_MAINNET_PUBLIC_RPC_FALLBACK_URL: str = "https://eth.drpc.org"
 
 # In enclave mode (IN_ENCLAVE=true), the business-chain Helios instance is
-# expected to be available at this local endpoint (configured in enclaver.yaml).
+# expected to be available at this local endpoint (configured in capsule.yaml).
 ETHEREUM_MAINNET_ENCLAVE_HELIOS_RPC_URL: str = "http://127.0.0.1:18546"
 
 # Generic aliases used throughout the template app logic.
@@ -79,7 +79,7 @@ BROADCAST_TX: bool = False
 ANCHOR_ON_WRITE: bool = True
 
 # S3 encryption mode expectation.
-# Actual encryption is enforced by `enclaver.yaml` storage.s3.encryption.mode.
+# Actual encryption is enforced by `capsule.yaml` storage.s3.encryption.mode.
 S3_ENCRYPTION_MODE: str = "kms"
 S3_ENCRYPTION_KEY_SCOPE: str = "object"
 S3_ENCRYPTION_AAD_MODE: str = "key"
@@ -88,7 +88,7 @@ S3_ENCRYPTION_ACCEPT_PLAINTEXT: bool = True
 
 
 # Host-backed filesystem demo configuration.
-# This path is provisioned by Enclaver hostfs when the app enables file proxy.
+# This path is provisioned by Capsule hostfs when the app enables file proxy.
 FILE_PROXY_ENABLED: bool = True
 FILE_PROXY_MOUNT_NAME: str = "appdata"
 FILE_PROXY_MOUNT_PATH: str = "/mnt/appdata"
