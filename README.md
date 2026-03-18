@@ -115,7 +115,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - `GET /status`
   - `POST /.well-known/attestation`
   - `GET /api/encryption/public_key`
-- **Capsule/sidecar APIs involved**
+- **Capsule APIs involved**
   - `GET /v1/eth/address`
   - `POST /v1/attestation`
   - `GET /v1/encryption/public_key`
@@ -130,7 +130,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - Hardware-backed random source from Nitro Secure Module
 - **App APIs used**
   - `GET /api/random`
-- **Capsule/sidecar APIs involved**
+- **Capsule APIs involved**
   - `GET /v1/random`
 - **Implementation entry points**
   - Frontend: [`frontend/src/app/page.tsx`](./frontend/src/app/page.tsx) (`hardware-entropy` tab)
@@ -142,7 +142,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - Encrypted response return path
 - **App APIs used**
   - `POST /api/echo`
-- **Capsule/sidecar APIs involved**
+- **Capsule APIs involved**
   - `POST /v1/encryption/encrypt`
   - `POST /v1/encryption/decrypt`
   - `GET /v1/encryption/public_key`
@@ -161,7 +161,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - `GET /api/storage`
   - `DELETE /api/storage/{key}`
   - `GET /api/storage/config`
-- **Capsule/sidecar APIs involved**
+- **Capsule APIs involved**
   - `POST /v1/s3/put`
   - `POST /v1/s3/get`
   - `POST /v1/s3/list`
@@ -181,7 +181,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - `POST /api/filesystem/write`
   - `GET /api/filesystem/read`
   - `GET /api/filesystem/list`
-- **Capsule/sidecar APIs involved**
+- **Capsule runtime bindings involved**
   - Hostfs mount defined under `storage.mounts[]`
   - Runtime binding via `capsule-cli run --mount <name>=<host_state_dir>`
 - **Implementation entry points**
@@ -198,7 +198,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - `POST /api/kms/kv/put`
   - `POST /api/kms/kv/get`
   - `POST /api/kms/kv/delete`
-- **Capsule/sidecar APIs involved**
+- **Capsule APIs involved**
   - `POST /v1/kms/derive`
   - `POST /v1/kms/kv/put`
   - `POST /v1/kms/kv/get`
@@ -216,7 +216,7 @@ This section is intended for developers who want to **learn and reuse** each mod
   - `GET /api/app-wallet/address`
   - `POST /api/app-wallet/sign`
   - `POST /api/app-wallet/sign-tx` (backend supports tx signing)
-- **Capsule/sidecar APIs involved**
+- **Capsule APIs involved**
   - `GET /v1/app-wallet/address`
   - `POST /v1/app-wallet/sign`
   - `POST /v1/app-wallet/sign-tx`
@@ -252,4 +252,4 @@ For any new feature, follow this template pattern:
 5. **Document required runtime config** in [`capsule.yaml`](./capsule.yaml) and constants in [`enclave/config.py`](./enclave/config.py).
 6. **Optionally add periodic execution** in [`enclave/tasks.py`](./enclave/tasks.py) if the feature needs background jobs.
 
-This keeps every capability consistent: UI demo → app API → sidecar/platform API → reproducible config.
+This keeps every capability consistent: UI demo → app API → Capsule API or runtime binding → reproducible config.
