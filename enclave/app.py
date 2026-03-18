@@ -25,7 +25,7 @@ Architecture:
                          │  (Framework) │
                          └──────────────┘
 
-`app.py` owns the shared `Capsule-Runtime()` instance from `enclave/nova_python_sdk/`
+`app.py` owns the shared `CapsuleRuntime()` instance from `enclave/nova_python_sdk/`
 and passes it into `routes.init()` and `tasks.init()`. Keep reusable Nova /
 Capsule API wrappers in `nova_python_sdk/`, and keep app-specific route, task,
 and contract logic in `routes.py`, `tasks.py`, and `chain.py`.
@@ -48,7 +48,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # Platform & User Components
-from nova_python_sdk.capsule-runtime import Capsule-Runtime
+from nova_python_sdk.capsule_runtime import CapsuleRuntime
 import tasks
 import routes
 import config
@@ -80,18 +80,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Helios sync wait skipped/failed: {e}")
 
-    tasks.init(app_state, capsule-runtime)
-    routes.init(app_state, capsule-runtime)
+    tasks.init(app_state, capsule_runtime)
+    routes.init(app_state, capsule_runtime)
     
     # 2. Register user routes (prefix: /api) and public routes
     app.include_router(routes.public_router)
     app.include_router(routes.router)
     
-    # 3. Load persisted state from S3 via Capsule-Runtime.
+    # 3. Load persisted state from S3 via CapsuleRuntime.
     # In local mockup mode this can be unavailable; if so we log and continue
     # with an empty state so local development still comes up cleanly.
     try:
-        data_bytes = capsule-runtime.s3_get("app_state.json")
+        data_bytes = capsule_runtime.s3_get("app_state.json")
         if data_bytes:
             app_state["data"] = json.loads(data_bytes.decode('utf-8'))
             logger.info("State loaded from S3")
@@ -160,13 +160,13 @@ else:
 # =============================================================================
 # Shared State & Platform SDK
 # =============================================================================
-# Capsule-Runtime: interface to enclave runtime services.
+# CapsuleRuntime: interface to enclave runtime services.
 # Endpoint resolution order:
 #   1. explicit constructor argument
-#   2. CAPSULE-RUNTIME_API_BASE_URL / CAPSULE-RUNTIME_ENDPOINT
+#   2. CAPSULE_RUNTIME_API_BASE_URL / CAPSULE_RUNTIME_ENDPOINT
 #   3. 127.0.0.1:18000 when IN_ENCLAVE=true
 #   4. capsule-runtime.sparsity.cloud:18000 in local development
-capsule-runtime = Capsule-Runtime()
+capsule_runtime = CapsuleRuntime()
 
 # Application state: Shared across routes.py and tasks.py
 # - "data": Your application's persistent data (saved to S3)
@@ -230,7 +230,7 @@ def root_overview(request: Request):
 def get_status():
     """Get TEE identity and cron status."""
     try:
-        address = Web3.to_checksum_address(capsule-runtime.eth_address())
+        address = Web3.to_checksum_address(capsule_runtime.eth_address())
         return AppStatus(
             status="running",
             ETH_address=address,

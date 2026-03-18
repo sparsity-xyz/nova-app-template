@@ -2,7 +2,7 @@
  * TLS Crypto Client
  * 
  * Provides ECDH + AES-GCM encrypted communication with Nova TEE enclave.
- * Supports both P-384 (Capsule-Runtime standard) and secp256k1 curves.
+ * Supports both P-384 (Capsule Runtime standard) and secp256k1 curves.
  */
 
 import * as secp256k1 from '@noble/secp256k1';

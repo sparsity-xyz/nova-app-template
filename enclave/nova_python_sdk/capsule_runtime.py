@@ -1,5 +1,5 @@
 """
-Nova Python SDK wrapper for Capsule-Runtime / Capsule internal APIs.
+Nova Python SDK wrapper for CapsuleRuntime / Capsule APIs.
 
 Canonical source:
 https://github.com/sparsity-xyz/nova-app-template/tree/main/enclave/nova_python_sdk
@@ -10,18 +10,18 @@ Updated at:
 SDK version:
 0.1.0
 
-Capsule Capsule API docs:
-https://github.com/sparsity-xyz/nova-enclave-capsule/blob/sparsity/docs/internal_api.md
+Capsule API docs:
+https://github.com/sparsity-xyz/nova-enclave-capsule/blob/main/docs/capsule-api.md
 
 Typical usage inside backend modules under `enclave/`:
 
-    from nova_python_sdk.capsule-runtime import Capsule-Runtime
+    from nova_python_sdk.capsule_runtime import CapsuleRuntime
 
-    capsule-runtime = Capsule-Runtime()
-    tee_address = capsule-runtime.eth_address()
+    capsule_runtime = CapsuleRuntime()
+    tee_address = capsule_runtime.eth_address()
 
-`Capsule-Runtime()` resolves its base URL from explicit arguments first, then
-`CAPSULE-RUNTIME_API_BASE_URL` / `CAPSULE-RUNTIME_ENDPOINT`, then falls back to
+`CapsuleRuntime()` resolves its base URL from explicit arguments first, then
+`CAPSULE_RUNTIME_API_BASE_URL` / `CAPSULE_RUNTIME_ENDPOINT`, then falls back to
 `127.0.0.1:18000` in enclave mode or `capsule-runtime.sparsity.cloud:18000` in local
 development.
 """
@@ -33,22 +33,22 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from .env import resolve_capsule-runtime_api_base_url
+from .env import resolve_capsule_runtime_api_base_url
 
 
-class Capsule-Runtime:
+class CapsuleRuntime:
     """
-    Wrapper around the enclave-local Capsule-Runtime API with Nova development fallbacks.
+    Wrapper around the enclave-local CapsuleRuntime API with Nova development fallbacks.
     """
 
     def __init__(self, endpoint: Optional[str] = None):
         """
-        Initialize the Capsule-Runtime client.
+        Initialize the CapsuleRuntime client.
 
         Args:
             endpoint: Optional explicit base URL override.
         """
-        self.endpoint = resolve_capsule-runtime_api_base_url(endpoint)
+        self.endpoint = resolve_capsule_runtime_api_base_url(endpoint)
 
     def _call(self, method: str, path: str, payload: Any = None) -> Any:
         url = f"{self.endpoint}{path}"
@@ -73,7 +73,7 @@ class Capsule-Runtime:
         Sign an EIP-1559 transaction payload.
 
         Args:
-            tx: Either a normalized Capsule-Runtime payload or a common Web3-style transaction dict.
+            tx: Either a normalized CapsuleRuntime payload or a common Web3-style transaction dict.
 
         Returns:
             Raw transaction, transaction hash, signature, and signer address.
@@ -104,7 +104,7 @@ class Capsule-Runtime:
             include_attestation: Whether to attach a CBOR attestation in the response.
 
         Returns:
-            Signature response from Capsule-Runtime.
+            Signature response from CapsuleRuntime.
 
         Capsule API:
             `POST /v1/eth/sign`
@@ -319,7 +319,7 @@ class Capsule-Runtime:
             max_keys: Optional maximum number of keys to return.
 
         Returns:
-            Raw list response from the internal API, including any pagination
+            Raw list response from the Capsule API, including any pagination
             metadata.
 
         Capsule API:

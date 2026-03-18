@@ -6,7 +6,7 @@ User Routes (routes.py)
 Define your custom API endpoints here.
 
 Prefer importing platform capabilities from `nova_python_sdk/`:
-    - `Capsule-Runtime` for identity, attestation, encryption, and storage
+    - `CapsuleRuntime` for identity, attestation, encryption, and storage
     - `NovaKmsClient` for `/v1/kms/*` and `/v1/app-wallet/*`
 
 Keep contract selectors and business-chain transaction helpers in `chain.py`,
@@ -20,7 +20,7 @@ not in the shared SDK.
 How it works:
     - All routes are prefixed with /api (e.g., /api/echo)
     - Public endpoints such as `/nonce` and `/.well-known/attestation` are also defined here
-    - You can access `app_state`, `capsule-runtime`, and `kms_client` after `init()` is called
+    - You can access `app_state`, `capsule_runtime`, and `kms_client` after `init()` is called
     - Use FastAPI's standard decorators (@router.get, @router.post, etc.)
 
 Representative endpoint groups included:
@@ -77,7 +77,7 @@ from config import (
 from nova_python_sdk.kms_client import NovaKmsClient, PlatformApiError
 
 if TYPE_CHECKING:
-    from nova_python_sdk.capsule-runtime import Capsule-Runtime
+    from nova_python_sdk.capsule_runtime import CapsuleRuntime
 
 logger = logging.getLogger("nova-app.routes")
 
@@ -85,11 +85,11 @@ logger = logging.getLogger("nova-app.routes")
 # Shared References (set by app.py during startup)
 # =============================================================================
 app_state: Optional[dict] = None
-capsule-runtime: Optional["Capsule-Runtime"] = None
+capsule_runtime: Optional["CapsuleRuntime"] = None
 kms_client: Optional[NovaKmsClient] = None
 
 
-def init(state_ref: dict, capsule-runtime_ref: "Capsule-Runtime"):
+def init(state_ref: dict, capsule_runtime_ref: "CapsuleRuntime"):
     """
     Initialize the routes module with shared references.
 
@@ -97,12 +97,12 @@ def init(state_ref: dict, capsule-runtime_ref: "Capsule-Runtime"):
 
     Args:
         state_ref: Shared mutable app state dict.
-        capsule-runtime_ref: Shared Capsule-Runtime client already configured for current runtime.
+        capsule_runtime_ref: Shared CapsuleRuntime client already configured for current runtime.
     """
-    global app_state, capsule-runtime, kms_client
+    global app_state, capsule_runtime, kms_client
     app_state = state_ref
-    capsule-runtime = capsule-runtime_ref
-    kms_client = NovaKmsClient(endpoint=capsule-runtime_ref.endpoint)
+    capsule_runtime = capsule_runtime_ref
+    kms_client = NovaKmsClient(endpoint=capsule_runtime_ref.endpoint)
     logger.info("Routes module initialized")
 
 
@@ -328,10 +328,10 @@ def _resolve_tx_signer() -> Tuple[str, str, Callable[[Dict[str, Any]], Dict[str,
     """
     Prefer app-wallet signer for business txs; gracefully fall back to TEE wallet signer.
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
 
-    tee_wallet_address = Web3.to_checksum_address(capsule-runtime.eth_address())
+    tee_wallet_address = Web3.to_checksum_address(capsule_runtime.eth_address())
 
     try:
         client = _require_kms_client()
@@ -346,7 +346,7 @@ def _resolve_tx_signer() -> Tuple[str, str, Callable[[Dict[str, Any]], Dict[str,
         logger.warning("App-wallet signer unavailable, using TEE signer: %s", exc)
 
     def _tee_signer(tx: Dict[str, Any]) -> Dict[str, Any]:
-        return capsule-runtime.sign_tx(tx)
+        return capsule_runtime.sign_tx(tx)
 
     return "tee_wallet", tee_wallet_address, _tee_signer
 
@@ -461,11 +461,11 @@ def get_attestation(nonce: str = ""):
     
     Returns: CBOR-encoded attestation document (base64)
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
     
     try:
-        attestation = capsule-runtime.get_attestation(nonce)
+        attestation = capsule_runtime.get_attestation(nonce)
         return {"attestation": base64.b64encode(attestation).decode()}
     except Exception as e:
         logger.error(f"Failed to get attestation: {e}")
@@ -479,12 +479,12 @@ def well_known_attestation(body: Dict[str, Any] = Body(default_factory=dict)):
 
     Returns raw CBOR attestation document.
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
 
     try:
         nonce = body.get("nonce", "") if isinstance(body, dict) else ""
-        attestation = capsule-runtime.get_attestation(nonce)
+        attestation = capsule_runtime.get_attestation(nonce)
         return Response(content=attestation, media_type="application/cbor")
     except Exception as e:
         logger.error(f"Failed to get attestation: {e}")
@@ -499,11 +499,11 @@ def sign_message(req: SignMessageRequest):
     The signature proves the message was signed by the TEE's
     hardware-seeded private key.
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
     
     try:
-        result = capsule-runtime.sign_message(req.message, req.include_attestation)
+        result = capsule_runtime.sign_message(req.message, req.include_attestation)
         return result
     except Exception as e:
         logger.error(f"Failed to sign message: {e}")
@@ -517,11 +517,11 @@ def get_encryption_public_key():
     
     Use this to establish an encrypted channel with the TEE.
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
     
     try:
-        return capsule-runtime.get_encryption_public_key()
+        return capsule_runtime.get_encryption_public_key()
     except Exception as e:
         logger.error(f"Failed to get encryption public key: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -532,11 +532,11 @@ def encrypt_data(req: EncryptRequest):
     """
     Encrypt data to send to a client using ECDH + AES-256-GCM.
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
     
     try:
-        return capsule-runtime.encrypt(req.plaintext, req.client_public_key)
+        return capsule_runtime.encrypt(req.plaintext, req.client_public_key)
     except Exception as e:
         logger.error(f"Failed to encrypt: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -547,11 +547,11 @@ def decrypt_data(req: DecryptRequest):
     """
     Decrypt data sent from a client using ECDH + AES-256-GCM.
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
     
     try:
-        plaintext = capsule-runtime.decrypt(req.nonce, req.client_public_key, req.encrypted_data)
+        plaintext = capsule_runtime.decrypt(req.nonce, req.client_public_key, req.encrypted_data)
         return {"plaintext": plaintext}
     except Exception as e:
         logger.error(f"Failed to decrypt: {e}")
@@ -565,11 +565,11 @@ def decrypt_data(req: DecryptRequest):
 @router.post("/echo")
 def echo_example(payload: Dict[str, Any] = Body(...)):
     """Echo back a message with TEE address (supports encrypted payloads)."""
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
 
     try:
-        address = Web3.to_checksum_address(capsule-runtime.eth_address())
+        address = Web3.to_checksum_address(capsule_runtime.eth_address())
     except Exception:
         address = "unavailable"
 
@@ -577,10 +577,10 @@ def echo_example(payload: Dict[str, Any] = Body(...)):
     if {"nonce", "public_key", "data"}.issubset(payload.keys()):
         enc = EncryptedPayload(**payload)
         try:
-            plaintext = capsule-runtime.decrypt(enc.nonce, enc.public_key, enc.data)
+            plaintext = capsule_runtime.decrypt(enc.nonce, enc.public_key, enc.data)
             req = EchoRequest(**json.loads(plaintext))
             response = {"reply": f"Echo: {req.message}", "tee_address": address}
-            encrypted = capsule-runtime.encrypt(json.dumps(response), enc.public_key)
+            encrypted = capsule_runtime.encrypt(json.dumps(response), enc.public_key)
             return {
                 "data": {
                     "encrypted_data": encrypted.get("encrypted_data"),
@@ -596,7 +596,7 @@ def echo_example(payload: Dict[str, Any] = Body(...)):
                 detail = None
             raise HTTPException(
                 status_code=400,
-                detail=f"Capsule-Runtime encryption/decryption failed: {detail or str(e)}",
+                detail=f"CapsuleRuntime encryption/decryption failed: {detail or str(e)}",
             )
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Encrypted request failed: {str(e)}")
@@ -631,11 +631,11 @@ def get_random():
         random_hex: 32 random bytes as hex string
         random_int: Random integer (0 to 2^256-1)
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
     
     try:
-        random_bytes = capsule-runtime.get_random_bytes()
+        random_bytes = capsule_runtime.get_random_bytes()
         random_hex = random_bytes.hex()
         random_int = int.from_bytes(random_bytes, 'big')
         
@@ -946,8 +946,8 @@ def _anchor_state_onchain(store_value: Any) -> Dict[str, Any]:
     # Resolve tx signer (app wallet preferred, tee wallet fallback).
     try:
         signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
-        if capsule-runtime:
-            anchor_status["tee_address"] = Web3.to_checksum_address(capsule-runtime.eth_address())
+        if capsule_runtime:
+            anchor_status["tee_address"] = Web3.to_checksum_address(capsule_runtime.eth_address())
         anchor_status["tx_signer"] = signer_kind
         anchor_status["signer_address"] = signer_address
     except Exception as e:
@@ -981,7 +981,7 @@ def _anchor_state_onchain(store_value: Any) -> Dict[str, Any]:
     # Sign and broadcast
     try:
         anchor = sign_update_state_hash(
-            capsule-runtime=capsule-runtime,
+            capsule_runtime=capsule_runtime,
             contract_address=CONTRACT_ADDRESS,
             chain_id=BUSINESS_CHAIN_ID,
             state_hash=state_hash,
@@ -1031,8 +1031,8 @@ def save_to_storage(req: StorageRequest):
         POST /api/storage
         {"key": "user_prefs", "value": {"theme": "dark", "lang": "en"}}
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
     
     try:
         data_store = _app_data_store()
@@ -1052,7 +1052,7 @@ def save_to_storage(req: StorageRequest):
         storage_backend = "s3"
         storage_warning: Optional[str] = None
         try:
-            success = capsule-runtime.s3_put(req.key, json_bytes, content_type=req.content_type)
+            success = capsule_runtime.s3_put(req.key, json_bytes, content_type=req.content_type)
         except requests.exceptions.RequestException as err:
             success = True
             storage_backend = "memory_fallback"
@@ -1095,8 +1095,8 @@ def load_from_storage(key: str):
     
     Returns the stored JSON value for the given key.
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
     
     try:
         data_store = _app_data_store()
@@ -1105,7 +1105,7 @@ def load_from_storage(key: str):
 
         # Try to load from S3 first
         try:
-            data = capsule-runtime.s3_get(key)
+            data = capsule_runtime.s3_get(key)
         except requests.exceptions.RequestException as err:
             data = None
             storage_backend = "memory_fallback"
@@ -1177,12 +1177,12 @@ def list_storage():
     """
     List all keys in S3 storage.
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
     
     try:
         try:
-            res = capsule-runtime.s3_list()
+            res = capsule_runtime.s3_list()
             keys = res.get("keys", []) if isinstance(res, dict) else res
             return {
                 "keys": keys,
@@ -1216,8 +1216,8 @@ def delete_from_storage(key: str):
     """
     Delete a key from S3 storage.
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
     
     try:
         data_store = _app_data_store()
@@ -1225,7 +1225,7 @@ def delete_from_storage(key: str):
         storage_warning: Optional[str] = None
 
         try:
-            success = capsule-runtime.s3_delete(key)
+            success = capsule_runtime.s3_delete(key)
         except requests.exceptions.RequestException as err:
             success = False
             storage_backend = "memory_fallback"
@@ -1289,7 +1289,7 @@ def read_contract():
         "rpc_url": _chain.endpoint,
         "chain_name": BUSINESS_CHAIN_NAME,
         "chain_id": BUSINESS_CHAIN_ID,
-        "tee_address": Web3.to_checksum_address(capsule-runtime.eth_address()) if capsule-runtime else None,
+        "tee_address": Web3.to_checksum_address(capsule_runtime.eth_address()) if capsule_runtime else None,
         "note": "Full contract read requires web3.py integration"
     }
 
@@ -1305,8 +1305,8 @@ def update_contract_state(req: ContractWriteRequest):
     
     Note: For full implementation, add web3.py for nonce/gas estimation.
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
     
     if not CONTRACT_ADDRESS:
         raise HTTPException(
@@ -1317,7 +1317,7 @@ def update_contract_state(req: ContractWriteRequest):
     try:
         signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
         signed = sign_update_state_hash(
-            capsule-runtime=capsule-runtime,
+            capsule_runtime=capsule_runtime,
             contract_address=CONTRACT_ADDRESS,
             chain_id=BUSINESS_CHAIN_ID,
             state_hash=req.state_hash,
@@ -1356,8 +1356,8 @@ def update_oracle_price_now():
     - If BROADCAST_TX is True, the enclave will attempt to send the tx via RPC.
     - Otherwise returns a raw signed tx for the caller to broadcast.
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
 
     if not CONTRACT_ADDRESS:
         raise HTTPException(
@@ -1371,7 +1371,7 @@ def update_oracle_price_now():
     # Resolve tx signer (app wallet preferred, tee wallet fallback).
     try:
         signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
-        tee_address = Web3.to_checksum_address(capsule-runtime.eth_address())
+        tee_address = Web3.to_checksum_address(capsule_runtime.eth_address())
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -1426,7 +1426,7 @@ def update_oracle_price_now():
     # Sign and optionally broadcast
     try:
         signed = sign_update_ETH_price(
-            capsule-runtime=capsule-runtime,
+            capsule_runtime=capsule_runtime,
             contract_address=CONTRACT_ADDRESS,
             chain_id=BUSINESS_CHAIN_ID,
             request_id=0,
@@ -1640,8 +1640,8 @@ def handle_pending_requests(lookback: int = 1000):
     Scan for pending ETHPriceUpdateRequested events and handle each by
     fetching ETH/USD and submitting updateETHPrice.
     """
-    if not capsule-runtime:
-        raise HTTPException(status_code=500, detail="Capsule-Runtime not initialized")
+    if not capsule_runtime:
+        raise HTTPException(status_code=500, detail="CapsuleRuntime not initialized")
 
     if not CONTRACT_ADDRESS:
         raise HTTPException(
@@ -1698,7 +1698,7 @@ def handle_pending_requests(lookback: int = 1000):
     # Resolve signer once per batch (app wallet preferred, tee wallet fallback).
     try:
         signer_kind, signer_address, sign_tx_fn = _resolve_tx_signer()
-        tee_address = Web3.to_checksum_address(capsule-runtime.eth_address())
+        tee_address = Web3.to_checksum_address(capsule_runtime.eth_address())
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -1751,7 +1751,7 @@ def handle_pending_requests(lookback: int = 1000):
         request_id = req["request_id"]
         try:
             signed = sign_update_ETH_price(
-                capsule-runtime=capsule-runtime,
+                capsule_runtime=capsule_runtime,
                 contract_address=CONTRACT_ADDRESS,
                 chain_id=BUSINESS_CHAIN_ID,
                 request_id=request_id,

@@ -11,7 +11,7 @@ This module defines defaults only. Runtime overrides are resolved in
 
 Relevant override env vars:
 - `IN_ENCLAVE`
-- `CAPSULE-RUNTIME_API_BASE_URL` / `CAPSULE-RUNTIME_ENDPOINT`
+- `CAPSULE_RUNTIME_API_BASE_URL` / `CAPSULE_RUNTIME_ENDPOINT`
 - `ETHEREUM_MAINNET_RPC_URL` / `BUSINESS_CHAIN_RPC_URL`
 - `NOVA_AUTH_CHAIN_RPC_URL` / `AUTH_CHAIN_RPC_URL`
 """

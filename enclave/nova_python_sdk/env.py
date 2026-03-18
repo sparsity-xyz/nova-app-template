@@ -22,8 +22,8 @@ from __future__ import annotations
 import os
 from typing import Optional, Sequence
 
-DEFAULT_ENCLAVE_CAPSULE-RUNTIME_API = "http://127.0.0.1:18000"
-DEFAULT_EXTERNAL_CAPSULE-RUNTIME_API = "http://capsule-runtime.sparsity.cloud:18000"
+DEFAULT_ENCLAVE_CAPSULE_RUNTIME_API = "http://127.0.0.1:18000"
+DEFAULT_EXTERNAL_CAPSULE_RUNTIME_API = "http://capsule-runtime.sparsity.cloud:18000"
 
 
 def in_enclave() -> bool:
@@ -64,17 +64,17 @@ def resolve_runtime_url(
     return enclave_url if in_enclave() else dev_url
 
 
-def resolve_capsule-runtime_api_base_url(override_url: Optional[str] = None) -> str:
+def resolve_capsule_runtime_api_base_url(override_url: Optional[str] = None) -> str:
     """
-    Resolve the Capsule-Runtime API base URL.
+    Resolve the CapsuleRuntime API base URL.
 
     Environment overrides checked:
-    - `CAPSULE-RUNTIME_API_BASE_URL`
-    - `CAPSULE-RUNTIME_ENDPOINT`
+    - `CAPSULE_RUNTIME_API_BASE_URL`
+    - `CAPSULE_RUNTIME_ENDPOINT`
     """
     return resolve_runtime_url(
         override_url=override_url,
-        override_env_vars=("CAPSULE-RUNTIME_API_BASE_URL", "CAPSULE-RUNTIME_ENDPOINT"),
-        enclave_url=DEFAULT_ENCLAVE_CAPSULE-RUNTIME_API,
-        dev_url=DEFAULT_EXTERNAL_CAPSULE-RUNTIME_API,
+        override_env_vars=("CAPSULE_RUNTIME_API_BASE_URL", "CAPSULE_RUNTIME_ENDPOINT"),
+        enclave_url=DEFAULT_ENCLAVE_CAPSULE_RUNTIME_API,
+        dev_url=DEFAULT_EXTERNAL_CAPSULE_RUNTIME_API,
     )

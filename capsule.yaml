@@ -10,11 +10,11 @@ sources:
   # Image source reference used by capsule config templates.
   app: "nova-app-template:latest"
 
-# Capsule-Runtime Primary API (full functionality)
+# Capsule Primary API (full functionality)
 api:
   listen_port: 18000
 
-# Capsule-Runtime Auxiliary API (restricted, for sidecars)
+# Capsule Auxiliary API (restricted, for sidecars)
 aux_api:
   listen_port: 18001
 

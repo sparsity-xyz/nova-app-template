@@ -10,14 +10,14 @@ Updated at:
 SDK version:
 0.1.0
 
-Capsule Capsule API docs:
-https://github.com/sparsity-xyz/nova-enclave-capsule/blob/sparsity/docs/internal_api.md
+Capsule API docs:
+https://github.com/sparsity-xyz/nova-enclave-capsule/blob/main/docs/capsule-api.md
 
 Typical usage inside request handlers:
 
     from nova_python_sdk.kms_client import NovaKmsClient
 
-    client = NovaKmsClient(endpoint=capsule-runtime.endpoint)
+    client = NovaKmsClient(endpoint=capsule_runtime.endpoint)
     result = client.kv_get("example-key")
 
 Use this client when you want a thin wrapper around `/v1/kms/*` and
@@ -35,7 +35,7 @@ import requests
 
 class PlatformApiError(RuntimeError):
     """
-    Raised when the Capsule internal API returns a non-2xx status code.
+    Raised when the Capsule API returns a non-2xx status code.
 
     Attributes:
         path: Request path that failed.

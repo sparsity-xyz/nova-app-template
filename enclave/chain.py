@@ -142,7 +142,7 @@ def get_auth_chain_status() -> Dict[str, Any]:
 
 def sign_update_ETH_price(
     *,
-    capsule-runtime: Any,
+    capsule_runtime: Any,
     contract_address: str,
     chain_id: int,
     request_id: int,
@@ -153,7 +153,7 @@ def sign_update_ETH_price(
     sender_address: Optional[str] = None,
     signer_kind: str = "tee_wallet",
 ) -> Dict[str, Any]:
-    tx_sender = Web3.to_checksum_address(sender_address or capsule-runtime.eth_address())
+    tx_sender = Web3.to_checksum_address(sender_address or capsule_runtime.eth_address())
     contract_address = Web3.to_checksum_address(contract_address)
     w3 = _chain.w3
 
@@ -177,7 +177,7 @@ def sign_update_ETH_price(
         "data": data,
     }
 
-    signed = sign_tx_fn(tx) if sign_tx_fn else capsule-runtime.sign_tx(tx)
+    signed = sign_tx_fn(tx) if sign_tx_fn else capsule_runtime.sign_tx(tx)
     signed.setdefault("address", tx_sender)
 
     return _broadcast_and_verify(
@@ -193,7 +193,7 @@ def sign_update_ETH_price(
 
 def sign_update_state_hash(
     *,
-    capsule-runtime: Any,
+    capsule_runtime: Any,
     contract_address: str,
     chain_id: int,
     state_hash: str,
@@ -203,7 +203,7 @@ def sign_update_state_hash(
     signer_kind: str = "tee_wallet",
 ) -> Dict[str, Any]:
     """Build, sign and optionally broadcast updateStateHash transaction."""
-    tx_sender = Web3.to_checksum_address(sender_address or capsule-runtime.eth_address())
+    tx_sender = Web3.to_checksum_address(sender_address or capsule_runtime.eth_address())
     contract_address = Web3.to_checksum_address(contract_address)
     w3 = _chain.w3
 
@@ -225,7 +225,7 @@ def sign_update_state_hash(
         "data": data,
     }
 
-    signed = sign_tx_fn(tx) if sign_tx_fn else capsule-runtime.sign_tx(tx)
+    signed = sign_tx_fn(tx) if sign_tx_fn else capsule_runtime.sign_tx(tx)
     signed.setdefault("address", tx_sender)
     return _broadcast_and_verify(
         w3=w3,

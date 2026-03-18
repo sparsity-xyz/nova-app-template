@@ -766,7 +766,7 @@ return (
                         apis={['POST /v1/encryption/encrypt', 'POST /v1/encryption/decrypt', 'GET /v1/encryption/public_key']}
                         description="Demonstrates end-to-end encrypted communication with the enclave using ECDH key exchange (P-384 / secp256k1) and AES-256-GCM encryption. Even if the TLS tunnel is compromised, data remains private."
                         docLink={{
-                            url: 'https://github.com/sparsity-xyz/nova-enclave-capsule/blob/sparsity/docs/encryption.md',
+                            url: 'https://github.com/sparsity-xyz/nova-enclave-capsule/blob/main/docs/encryption.md',
                             label: 'E2E Encryption Documentation'
                         }}
                     />

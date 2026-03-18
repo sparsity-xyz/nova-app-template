@@ -68,7 +68,7 @@ Default local chain behavior:
 - When `IN_ENCLAVE=true`, the same logic switches to enclave-local Helios on `127.0.0.1:18545` and `127.0.0.1:18546`
 
 Startup note:
-- On boot, the backend tries to restore `app_state.json` through Capsule-Runtime S3. In local mockup mode this may return no state or fail transiently; the app logs `Starting fresh...` and continues with an empty in-memory state.
+- On boot, the backend tries to restore `app_state.json` through Capsule Runtime S3. In local mockup mode this may return no state or fail transiently; the app logs `Starting fresh...` and continues with an empty in-memory state.
 
 Platform-managed deploy note:
 - Actual platform builds/deployments use control-plane generated app-hub `capsule.yaml` from app settings.
@@ -78,28 +78,28 @@ Platform-managed deploy note:
 The canonical backend SDK lives in [`enclave/nova_python_sdk/`](./enclave/nova_python_sdk). Because the Docker image copies `enclave/` into the runtime image, backend modules inside [`enclave/`](./enclave) can import it directly:
 
 ```python
-from nova_python_sdk.capsule-runtime import Capsule-Runtime
+from nova_python_sdk.capsule_runtime import CapsuleRuntime
 from nova_python_sdk.kms_client import NovaKmsClient
 from nova_python_sdk.rpc import ChainRpc
 
-capsule-runtime = Capsule-Runtime()
-kms = NovaKmsClient(endpoint=capsule-runtime.endpoint)
+capsule_runtime = CapsuleRuntime()
+kms = NovaKmsClient(endpoint=capsule_runtime.endpoint)
 ```
 
 Use each SDK module for one responsibility:
-- [`enclave/nova_python_sdk/capsule-runtime.py`](./enclave/nova_python_sdk/capsule-runtime.py): identity, attestation, encryption, S3, and convenience wrappers around `/v1/kms/*` and `/v1/app-wallet/*`
+- [`enclave/nova_python_sdk/capsule_runtime.py`](./enclave/nova_python_sdk/capsule_runtime.py): identity, attestation, encryption, S3, and convenience wrappers around `/v1/kms/*` and `/v1/app-wallet/*`
 - [`enclave/nova_python_sdk/kms_client.py`](./enclave/nova_python_sdk/kms_client.py): preferred thin client for KMS and app-wallet flows in request/response handlers
 - [`enclave/nova_python_sdk/rpc.py`](./enclave/nova_python_sdk/rpc.py): shared RPC transport and environment switching; keep app-specific contract logic in [`enclave/chain.py`](./enclave/chain.py)
 - [`enclave/nova_python_sdk/env.py`](./enclave/nova_python_sdk/env.py): shared `IN_ENCLAVE` and endpoint resolution helpers
 
 Runtime endpoint precedence:
-- Capsule-Runtime API: `CAPSULE-RUNTIME_API_BASE_URL` -> `CAPSULE-RUNTIME_ENDPOINT` -> `http://127.0.0.1:18000` when `IN_ENCLAVE=true` -> `http://capsule-runtime.sparsity.cloud:18000` otherwise
+- Capsule API: `CAPSULE_RUNTIME_API_BASE_URL` -> `CAPSULE_RUNTIME_ENDPOINT` -> `http://127.0.0.1:18000` when `IN_ENCLAVE=true` -> `http://capsule-runtime.sparsity.cloud:18000` otherwise
 - Business chain RPC: `ETHEREUM_MAINNET_RPC_URL` -> `BUSINESS_CHAIN_RPC_URL` -> `http://127.0.0.1:18546` when `IN_ENCLAVE=true` -> `http://capsule-runtime.sparsity.cloud:18546` otherwise
 - Auth chain RPC: `NOVA_AUTH_CHAIN_RPC_URL` -> `AUTH_CHAIN_RPC_URL` -> `http://127.0.0.1:18545` when `IN_ENCLAVE=true` -> `http://capsule-runtime.sparsity.cloud:18545` otherwise
 
 Recommended template pattern:
-1. Create one shared `Capsule-Runtime()` instance in [`enclave/app.py`](./enclave/app.py).
-2. In route modules, build `NovaKmsClient(endpoint=capsule-runtime.endpoint)` when you need `/v1/kms/*` or `/v1/app-wallet/*`.
+1. Create one shared `CapsuleRuntime()` instance in [`enclave/app.py`](./enclave/app.py).
+2. In route modules, build `NovaKmsClient(endpoint=capsule_runtime.endpoint)` when you need `/v1/kms/*` or `/v1/app-wallet/*`.
 3. In [`enclave/chain.py`](./enclave/chain.py), build shared chain clients with `ChainRpc` and keep ABI selectors, contract read helpers, and transaction builders there.
 
 ## 6. Module Learning Map (Functionality + APIs + Implementation)
@@ -246,7 +246,7 @@ This section is intended for developers who want to **learn and reuse** each mod
 For any new feature, follow this template pattern:
 
 1. **Add backend endpoint** in [`enclave/routes.py`](./enclave/routes.py).
-2. **Reuse the canonical SDK first** from [`enclave/nova_python_sdk/`](./enclave/nova_python_sdk) for Capsule-Runtime, KMS, app-wallet, and shared RPC logic.
+2. **Reuse the canonical SDK first** from [`enclave/nova_python_sdk/`](./enclave/nova_python_sdk) for Capsule Runtime, KMS, app-wallet, and shared RPC logic.
 3. **Keep app-specific blockchain logic** in [`enclave/chain.py`](./enclave/chain.py) instead of pushing business helpers into the shared SDK.
 4. **Expose a frontend card/tab** in [`frontend/src/app/page.tsx`](./frontend/src/app/page.tsx).
 5. **Document required runtime config** in [`capsule.yaml`](./capsule.yaml) and constants in [`enclave/config.py`](./enclave/config.py).
