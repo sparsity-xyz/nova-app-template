@@ -28,7 +28,7 @@ AUTH_CHAIN_ID: int = 84532
 # Public RPC used as a diagnostic fallback when auth-chain Helios is unavailable.
 AUTH_CHAIN_PUBLIC_RPC_URL: str = "https://sepolia.base.org"
 
-# Local development should prefer the public mockup Helios endpoint so behavior
+# Local development should prefer the shared Nova Development Runtime Helios endpoint so behavior
 # stays close to the final enclave runtime instead of bypassing Helios entirely.
 AUTH_CHAIN_MOCK_HELIOS_RPC_URL: str = "http://capsule-runtime.sparsity.cloud:18545"
 

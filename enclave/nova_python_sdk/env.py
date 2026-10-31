@@ -14,7 +14,7 @@ This module centralizes the template's runtime switching rules:
 1. explicit function argument override
 2. environment variable overrides
 3. enclave-local defaults when `IN_ENCLAVE=true`
-4. public mockup defaults for local development
+4. shared Nova Development Runtime defaults for local development
 """
 
 from __future__ import annotations

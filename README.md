@@ -48,6 +48,10 @@ Notes aligned with portal/API:
 - Current deploy UI has no environment-variable input section.
 
 ## 4. Local Development Quick Start
+
+**Nova Development Runtime** (formerly the mockup service) is a shared deployment of Capsule inside a real Nitro enclave. Capsule is the software used by both this development deployment and ordinary Nova applications. Your laptop app remains outside the enclave and shares the development runtime identity until deployed into its own enclave.
+
+The template already includes KMS SDK access and a browser test panel. The separately named **Nova KMS Integration Test** checks cross-node key agreement and replication; it is not a required background service for this template.
 ```bash
 # 1) Start frontend dev server
 make dev-frontend
@@ -63,12 +67,12 @@ Backend serves:
 - **UI Dashboard:** `http://localhost:8000/frontend/`
 
 Default local chain behavior:
-- Auth chain reads prefer mockup Helios at `http://capsule-runtime.sparsity.cloud:18545`
-- Business chain reads prefer mockup Helios at `http://capsule-runtime.sparsity.cloud:18546`
+- Auth chain reads prefer Nova Development Runtime Helios at `http://capsule-runtime.sparsity.cloud:18545`
+- Business chain reads prefer Nova Development Runtime Helios at `http://capsule-runtime.sparsity.cloud:18546`
 - When `IN_ENCLAVE=true`, the same logic switches to enclave-local Helios on `127.0.0.1:18545` and `127.0.0.1:18546`
 
 Startup note:
-- On boot, the backend tries to restore `app_state.json` through Capsule Runtime S3. In local mockup mode this may return no state or fail transiently; the app logs `Starting fresh...` and continues with an empty in-memory state.
+- On boot, the backend tries to restore `app_state.json` through Capsule Runtime S3. In local development mode this may return no state or fail transiently; the app logs `Starting fresh...` and continues with an empty in-memory state.
 
 Platform-managed deploy note:
 - Actual platform builds/deployments use control-plane generated app-hub `capsule.yaml` from app settings.

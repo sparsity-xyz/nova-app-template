@@ -6,10 +6,10 @@ Keep contract selectors, ABI-specific reads, and transaction builders here.
 
 Runtime endpoint precedence:
 - Business chain: `ETHEREUM_MAINNET_RPC_URL` -> `BUSINESS_CHAIN_RPC_URL` ->
-  enclave-local Helios (`127.0.0.1:18546`) -> public mockup Helios
+  enclave-local Helios (`127.0.0.1:18546`) -> shared Nova Development Runtime Helios
   (`capsule-runtime.sparsity.cloud:18546`)
 - Auth chain: `NOVA_AUTH_CHAIN_RPC_URL` -> `AUTH_CHAIN_RPC_URL` ->
-  enclave-local Helios (`127.0.0.1:18545`) -> public mockup Helios
+  enclave-local Helios (`127.0.0.1:18545`) -> shared Nova Development Runtime Helios
   (`capsule-runtime.sparsity.cloud:18545`)
 """
 
